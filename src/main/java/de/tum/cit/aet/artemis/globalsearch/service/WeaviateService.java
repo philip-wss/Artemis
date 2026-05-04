@@ -25,6 +25,7 @@ import de.tum.cit.aet.artemis.globalsearch.config.schema.WeaviatePropertyDefinit
 import de.tum.cit.aet.artemis.globalsearch.config.schema.WeaviateReferenceDefinition;
 import de.tum.cit.aet.artemis.globalsearch.config.schema.WeaviateSchemas;
 import de.tum.cit.aet.artemis.globalsearch.exception.WeaviateException;
+import de.tum.cit.aet.artemis.globalsearch.service.migration.WeaviateMigrationService;
 import io.weaviate.client6.v1.api.WeaviateApiException;
 import io.weaviate.client6.v1.api.WeaviateClient;
 import io.weaviate.client6.v1.api.collections.CollectionConfig;
