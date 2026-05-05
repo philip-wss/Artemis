@@ -22,6 +22,8 @@ public class V0ToV1Migration implements WeaviateMigration {
 
     static final String SEARCHABLE_ENTITIES_COLLECTION = "SearchableEntities";
 
+    public static final String LEGACY_EXERCISES_COLLECTION = "Exercises";
+
     @Override
     public int targetVersion() {
         return 1;
@@ -34,7 +36,7 @@ public class V0ToV1Migration implements WeaviateMigration {
 
     @Override
     public void migrate(WeaviateClient client, String collectionPrefix) throws IOException {
-        dropIfExists(client, collectionPrefix + "Exercises");
+        dropIfExists(client, collectionPrefix + LEGACY_EXERCISES_COLLECTION);
         dropIfExists(client, collectionPrefix + SEARCHABLE_ENTITIES_COLLECTION);
     }
 
