@@ -43,7 +43,7 @@ const TARGET_LECTURES = 20;
 const TARGET_LECTURE_UNITS = 5;
 const TARGET_FAQS = 20;
 const TARGET_CHANNEL_MESSAGES = 15;
-const TARGET_EXERCISE_MESSAGES = 50;
+const TARGET_EXERCISE_MESSAGES = 10;
 
 // Exercise type distribution for 70 exercises (majority programming)
 const EXERCISE_DISTRIBUTION = {
@@ -507,7 +507,7 @@ async function postMessage(client, courseId, channelId, content) {
         const result = (await client.post(`/api/communication/courses/${courseId}/messages`, post)).data;
         // Throttle: each message triggers async push-notification tasks; posting too fast fills the
         // server's thread pool and causes TaskRejectedException for subsequent requests.
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 50));
         return result;
     } catch (e) {
         return null;
