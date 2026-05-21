@@ -27,11 +27,13 @@ import de.tum.cit.aet.artemis.core.user.util.UserUtilService;
 import de.tum.cit.aet.artemis.core.util.CourseUtilService;
 import de.tum.cit.aet.artemis.exam.domain.Exam;
 import de.tum.cit.aet.artemis.exam.domain.ExerciseGroup;
+import de.tum.cit.aet.artemis.exam.dto.ExerciseGroupUpdateDTO;
 import de.tum.cit.aet.artemis.exam.test_repository.ExamTestRepository;
 import de.tum.cit.aet.artemis.exam.util.ExamFactory;
 import de.tum.cit.aet.artemis.exam.util.ExamUtilService;
 import de.tum.cit.aet.artemis.exercise.domain.Exercise;
-import de.tum.cit.aet.artemis.globalsearch.service.ExerciseWeaviateService;
+import de.tum.cit.aet.artemis.globalsearch.dto.searchableentity.ExerciseSearchableEntityDTO;
+import de.tum.cit.aet.artemis.globalsearch.service.SearchableEntityWeaviateService;
 import de.tum.cit.aet.artemis.globalsearch.service.WeaviateService;
 import de.tum.cit.aet.artemis.globalsearch.util.WeaviateTestUtil;
 import de.tum.cit.aet.artemis.programming.domain.ProgrammingExercise;
@@ -73,7 +75,7 @@ class ExerciseGroupIntegrationJenkinsLocalVCTest extends AbstractSpringIntegrati
     private WeaviateService weaviateService;
 
     @Autowired(required = false)
-    private ExerciseWeaviateService exerciseWeaviateService;
+    private SearchableEntityWeaviateService searchableEntityWeaviateService;
 
     private Course course1;
 
@@ -111,7 +113,7 @@ class ExerciseGroupIntegrationJenkinsLocalVCTest extends AbstractSpringIntegrati
     private void testAllPreAuthorize() throws Exception {
         ExerciseGroup exerciseGroup = ExamFactory.generateExerciseGroup(true, exam1);
         request.post("/api/exam/courses/" + course1.getId() + "/exams/" + exam1.getId() + "/exercise-groups", exerciseGroup, HttpStatus.FORBIDDEN);
-        request.put("/api/exam/courses/" + course1.getId() + "/exams/" + exam1.getId() + "/exercise-groups", exerciseGroup, HttpStatus.FORBIDDEN);
+        request.put("/api/exam/courses/" + course1.getId() + "/exams/" + exam1.getId() + "/exercise-groups", ExerciseGroupUpdateDTO.of(exerciseGroup1), HttpStatus.FORBIDDEN);
         request.get("/api/exam/courses/" + course1.getId() + "/exams/" + exam1.getId() + "/exercise-groups/" + exerciseGroup1.getId(), HttpStatus.FORBIDDEN, ExerciseGroup.class);
         request.getList("/api/exam/courses/" + course1.getId() + "/exams/" + exam1.getId() + "/exercise-groups", HttpStatus.FORBIDDEN, ExerciseGroup.class);
         request.delete("/api/exam/courses/" + course1.getId() + "/exams/" + exam1.getId() + "/exercise-groups/" + exerciseGroup1.getId(), HttpStatus.FORBIDDEN);
@@ -140,10 +142,13 @@ class ExerciseGroupIntegrationJenkinsLocalVCTest extends AbstractSpringIntegrati
     @Test
     @WithMockUser(username = TEST_PREFIX + "editor1", roles = "EDITOR")
     void testUpdateExerciseGroup_asEditor() throws Exception {
+        // Exercise group with non-existent ID -> not found
         ExerciseGroup exerciseGroup = ExamFactory.generateExerciseGroup(true, exam1);
-        exerciseGroup.setExam(null);
-        request.put("/api/exam/courses/" + course1.getId() + "/exams/" + exam1.getId() + "/exercise-groups", exerciseGroup, HttpStatus.CONFLICT);
-        request.put("/api/exam/courses/" + course1.getId() + "/exams/" + exam1.getId() + "/exercise-groups", exerciseGroup1, HttpStatus.OK);
+        exerciseGroup.setId(999999L);
+        request.put("/api/exam/courses/" + course1.getId() + "/exams/" + exam1.getId() + "/exercise-groups", ExerciseGroupUpdateDTO.of(exerciseGroup), HttpStatus.NOT_FOUND);
+
+        // Valid update
+        request.put("/api/exam/courses/" + course1.getId() + "/exams/" + exam1.getId() + "/exercise-groups", ExerciseGroupUpdateDTO.of(exerciseGroup1), HttpStatus.OK);
         verify(examAccessService).checkCourseAndExamAndExerciseGroupAccessElseThrow(Role.EDITOR, course1.getId(), exam1.getId(), exerciseGroup1);
     }
 
@@ -170,8 +175,8 @@ class ExerciseGroupIntegrationJenkinsLocalVCTest extends AbstractSpringIntegrati
     @Test
     @WithMockUser(username = TEST_PREFIX + "instructor1", roles = "INSTRUCTOR")
     void testDeleteExerciseGroup_asInstructor() throws Exception {
-        if (exerciseWeaviateService != null) {
-            exerciseWeaviateService.upsertExerciseAsync(textExercise1);
+        if (searchableEntityWeaviateService != null) {
+            searchableEntityWeaviateService.upsertExerciseAsync(ExerciseSearchableEntityDTO.fromExercise(textExercise1));
 
             await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> WeaviateTestUtil.assertExerciseExistsInWeaviate(weaviateService, textExercise1));
         }

@@ -58,7 +58,7 @@ describe('MonacoEditorComponent', () => {
             dispose: jest.fn(),
             addCommand: jest.fn(),
         }),
-        getOriginalEditor: jest.fn().mockReturnValue({ getValue: jest.fn(), updateOptions: jest.fn() }),
+        getOriginalEditor: jest.fn().mockReturnValue({ getValue: jest.fn(), updateOptions: jest.fn(), onDidLayoutChange: jest.fn().mockReturnValue({ dispose: jest.fn() }) }),
         setModel: jest.fn(),
         onDidUpdateDiff: jest.fn().mockReturnValue({ dispose: jest.fn() }),
         getLineChanges: jest.fn(),
@@ -418,6 +418,16 @@ describe('MonacoEditorComponent', () => {
         fixture.detectChanges();
         const disposable = comp.onDidChangeModelContent(listenerStub);
         comp.setText(singleLineText);
+        expect(listenerStub).toHaveBeenCalled();
+        disposable.dispose();
+    });
+
+    it('should register a listener for selection changes', () => {
+        const listenerStub = jest.fn();
+        fixture.detectChanges();
+        comp.setText('hallo welt, hello world');
+        const disposable = comp.onSelectionChange(listenerStub);
+        comp.setSelection({ startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 10 });
         expect(listenerStub).toHaveBeenCalled();
         disposable.dispose();
     });

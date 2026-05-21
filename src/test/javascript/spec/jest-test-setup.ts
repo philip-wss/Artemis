@@ -1,4 +1,5 @@
 import '@angular/compiler';
+import { setupZoneTestEnv } from 'jest-preset-angular/setup-env/zone';
 import 'app/shared/util/map.extension';
 import 'app/shared/util/string.extension';
 import 'app/shared/util/array.extension';
@@ -8,6 +9,20 @@ import 'jest-extended';
 import failOnConsole from 'jest-fail-on-console';
 import { TextDecoder, TextEncoder } from 'util';
 import { MockClipboardItem } from './helpers/mocks/service/mock-clipboard-item';
+
+// Angular's TestBed singleton state survives across spec files in the same Jest worker, so
+// `setupZoneTestEnv()` (which calls `getTestBed().initTestEnvironment(...)`) throws "Cannot
+// set base providers because it has already been called" on every file after the first.
+// Calling `getTestBed().resetTestEnvironment()` first breaks fakeAsync because `zone.js/testing`
+// is patched into globals on the first call only and gets stripped by the reset. Swallowing the
+// duplicate-init error keeps both the first init and subsequent files working.
+try {
+    setupZoneTestEnv();
+} catch (error) {
+    if (!(error instanceof Error) || !error.message.includes('already been called')) {
+        throw error;
+    }
+}
 
 /*
  * Monaco-editor 0.55+ uses the CSS Typed Object Model API (CSS.supports(), CSS.escape(), etc.)
@@ -81,12 +96,22 @@ Object.defineProperty(window, 'matchMedia', {
 // PrimeNG UIX motion relies on matchMedia; mock it globally to avoid setup in individual specs.
 jest.mock('@primeuix/motion', () => ({
     __esModule: true,
+    ANIMATION: 'animation',
+    TRANSITION: 'transition',
+    DEFAULT_MOTION_OPTIONS: {},
     createMotion: jest.fn(() => ({
         enter: jest.fn(() => Promise.resolve()),
         leave: jest.fn(() => Promise.resolve()),
         cancel: jest.fn(),
         update: jest.fn(),
     })),
+    resolveDuration: jest.fn(() => 0),
+    resolveClassNames: jest.fn(() => ({ enter: { from: '', active: '', to: '' }, leave: { from: '', active: '', to: '' } })),
+    getMotionHooks: jest.fn(() => ({})),
+    getMotionMetadata: jest.fn(() => ({ type: undefined, timeout: 0, count: 0 })),
+    shouldSkipMotion: jest.fn(() => true),
+    mergeOptions: jest.fn((opts: any) => opts || {}),
+    setAutoDimensionVariables: jest.fn(),
 }));
 
 // Prevents errors with the monaco editor tests

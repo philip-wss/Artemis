@@ -8,6 +8,7 @@ import { MockTranslateService } from 'test/helpers/mocks/service/mock-translate.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setupTestBed } from '@analogjs/vitest-angular/setup-testbed';
 import { ExerciseReviewCommentService } from 'app/exercise/review/exercise-review-comment.service';
+import { ConfirmationService } from 'primeng/api';
 import { signal } from '@angular/core';
 
 describe('ReviewCommentThreadWidgetComponent', () => {
@@ -15,6 +16,7 @@ describe('ReviewCommentThreadWidgetComponent', () => {
     let fixture: ComponentFixture<ReviewCommentThreadWidgetComponent>;
     let comp: ReviewCommentThreadWidgetComponent;
     let reviewCommentService: any;
+    let confirmationService: ConfirmationService;
 
     beforeEach(async () => {
         reviewCommentService = {
@@ -22,6 +24,7 @@ describe('ReviewCommentThreadWidgetComponent', () => {
             createReplyInContext: vi.fn(),
             updateCommentInContext: vi.fn(),
             toggleResolvedInContext: vi.fn(),
+            toggleGroupResolvedInContext: vi.fn(),
             threads: signal([]),
         };
 
@@ -35,6 +38,7 @@ describe('ReviewCommentThreadWidgetComponent', () => {
 
         fixture = TestBed.createComponent(ReviewCommentThreadWidgetComponent);
         comp = fixture.componentInstance;
+        confirmationService = fixture.debugElement.injector.get(ConfirmationService);
         fixture.componentRef.setInput('thread', { id: 1, resolved: false, comments: [] } as any);
     });
 
@@ -49,9 +53,41 @@ describe('ReviewCommentThreadWidgetComponent', () => {
         expect(comp.showThreadBody()).toBe(false);
     });
 
-    it('should emit delete on deleteComment', () => {
+    it('should request confirmation dialog on deleteComment', () => {
+        const confirmSpy = vi.spyOn(confirmationService, 'confirm');
         comp.deleteComment(5);
+        expect(confirmSpy).toHaveBeenCalledOnce();
+        expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ message: expect.any(String), header: expect.any(String) }));
+    });
+
+    it('should delete comment when deletion is confirmed', () => {
+        let acceptCallback: (() => void) | undefined;
+        vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation: { accept?: () => void }) => {
+            acceptCallback = confirmation.accept;
+            return confirmationService;
+        });
+
+        comp.deleteComment(5);
+        expect(reviewCommentService.deleteCommentInContext).not.toHaveBeenCalled();
+
+        acceptCallback?.();
+
         expect(reviewCommentService.deleteCommentInContext).toHaveBeenCalledWith(5);
+    });
+
+    it('should not delete comment when deletion is dismissed', () => {
+        let rejectCallback: (() => void) | undefined;
+        vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation: { reject?: () => void }) => {
+            rejectCallback = confirmation.reject;
+            return confirmationService;
+        });
+
+        comp.deleteComment(5);
+        expect(reviewCommentService.deleteCommentInContext).not.toHaveBeenCalled();
+
+        rejectCallback?.();
+
+        expect(reviewCommentService.deleteCommentInContext).not.toHaveBeenCalled();
     });
 
     it('should update comment on saveEditing and clear editing state', () => {
@@ -142,6 +178,42 @@ describe('ReviewCommentThreadWidgetComponent', () => {
 
         expect(comp.showThreadBody()).toBe(false);
         expect(collapseSpy).toHaveBeenCalledWith(true);
+    });
+
+    it('should resolve all threads in the group and collapse current thread', () => {
+        const collapseSpy = vi.fn();
+        comp.onToggleCollapse.subscribe(collapseSpy);
+        fixture.componentRef.setInput('thread', { id: 1, groupId: 10, resolved: false, comments: [] } as any);
+
+        comp.resolveGroup();
+
+        expect(reviewCommentService.toggleGroupResolvedInContext).toHaveBeenCalledWith(10, true);
+        expect(comp.showThreadBody()).toBe(false);
+        expect(collapseSpy).toHaveBeenCalledWith(true);
+    });
+
+    it('should not resolve group when the thread has no group', () => {
+        fixture.componentRef.setInput('thread', { id: 1, resolved: false, comments: [] } as any);
+
+        comp.resolveGroup();
+
+        expect(reviewCommentService.toggleGroupResolvedInContext).not.toHaveBeenCalled();
+    });
+
+    it('should unresolve all threads in the group', () => {
+        fixture.componentRef.setInput('thread', { id: 1, groupId: 10, resolved: true, comments: [] } as any);
+
+        comp.unresolveGroup();
+
+        expect(reviewCommentService.toggleGroupResolvedInContext).toHaveBeenCalledWith(10, false);
+    });
+
+    it('should handle unresolve-group menu action', () => {
+        fixture.componentRef.setInput('thread', { id: 1, groupId: 10, resolved: true, comments: [] } as any);
+
+        comp.handleResolveGroupMenuAction('unresolve-group');
+
+        expect(reviewCommentService.toggleGroupResolvedInContext).toHaveBeenCalledWith(10, false);
     });
 
     it('should detect edited comments', () => {
@@ -240,5 +312,130 @@ describe('ReviewCommentThreadWidgetComponent', () => {
         comp.startEditing(comment);
         expect(comp.editingCommentId()).toBeUndefined();
         expect(comp.editText()).toBe('');
+    });
+
+    it('should expose suggested inline fix for consistency issue threads', () => {
+        const suggestedFix = {
+            startLine: 5,
+            endLine: 5,
+            expectedCode: 'foo',
+            replacementCode: 'bar',
+            applied: false,
+        };
+        fixture.componentRef.setInput('thread', {
+            id: 1,
+            resolved: false,
+            comments: [
+                {
+                    id: 3,
+                    type: CommentType.CONSISTENCY_CHECK,
+                    createdDate: '2024-01-01T00:00:00Z',
+                    content: {
+                        contentType: CommentContentType.CONSISTENCY_CHECK,
+                        severity: ConsistencyIssue.SeverityEnum.High,
+                        category: ConsistencyIssue.CategoryEnum.MethodParameterMismatch,
+                        text: 'issue',
+                        suggestedFix,
+                    },
+                },
+            ],
+        } as any);
+
+        expect(comp.consistencySuggestedInlineFix()).toEqual(suggestedFix);
+    });
+
+    it('should hide malformed suggested inline fix with null replacement code', () => {
+        fixture.componentRef.setInput('thread', {
+            id: 1,
+            resolved: false,
+            comments: [
+                {
+                    id: 3,
+                    type: CommentType.CONSISTENCY_CHECK,
+                    createdDate: '2024-01-01T00:00:00Z',
+                    content: {
+                        contentType: CommentContentType.CONSISTENCY_CHECK,
+                        severity: ConsistencyIssue.SeverityEnum.High,
+                        category: ConsistencyIssue.CategoryEnum.MethodParameterMismatch,
+                        text: 'issue',
+                        suggestedFix: {
+                            startLine: 5,
+                            endLine: 5,
+                            expectedCode: 'foo',
+                            replacementCode: null,
+                            applied: false,
+                        },
+                    },
+                },
+            ],
+        } as any);
+
+        expect(comp.consistencySuggestedInlineFix()).toBeUndefined();
+    });
+
+    it('should keep deletion suggested inline fixes with empty replacement code', () => {
+        const suggestedFix = {
+            startLine: 5,
+            endLine: 5,
+            expectedCode: 'foo',
+            replacementCode: '',
+            applied: false,
+        };
+        fixture.componentRef.setInput('thread', {
+            id: 1,
+            resolved: false,
+            comments: [
+                {
+                    id: 3,
+                    type: CommentType.CONSISTENCY_CHECK,
+                    createdDate: '2024-01-01T00:00:00Z',
+                    content: {
+                        contentType: CommentContentType.CONSISTENCY_CHECK,
+                        severity: ConsistencyIssue.SeverityEnum.High,
+                        category: ConsistencyIssue.CategoryEnum.MethodParameterMismatch,
+                        text: 'issue',
+                        suggestedFix,
+                    },
+                },
+            ],
+        } as any);
+
+        expect(comp.consistencySuggestedInlineFix()).toEqual(suggestedFix);
+    });
+
+    it('should emit apply-inline-fix event', () => {
+        const inlineFix = {
+            startLine: 2,
+            endLine: 2,
+            expectedCode: 'foo',
+            replacementCode: 'bar',
+            applied: false,
+        };
+        const applySpy = vi.fn();
+        comp.onApplyInlineFix.subscribe(applySpy);
+
+        comp.applySuggestedInlineFix(inlineFix);
+
+        expect(applySpy).toHaveBeenCalledWith(inlineFix);
+    });
+
+    it('should clear outdated warning when trying to apply an inline fix', () => {
+        const inlineFix = {
+            startLine: 2,
+            endLine: 2,
+            expectedCode: 'foo',
+            replacementCode: 'bar',
+            applied: false,
+        };
+        comp.setInlineFixOutdatedWarning(true);
+
+        comp.applySuggestedInlineFix(inlineFix);
+
+        expect(comp.showInlineFixOutdatedWarning()).toBe(false);
+    });
+
+    it('should set outdated warning state for inline fixes', () => {
+        comp.setInlineFixOutdatedWarning(true);
+        expect(comp.showInlineFixOutdatedWarning()).toBe(true);
     });
 });

@@ -20,7 +20,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 @Schema(description = "Request to apply an AI-powered checklist action to the problem statement")
 public record ChecklistActionRequestDTO(@NotNull @Schema(description = "Type of action to apply") ActionType actionType,
-        @NotBlank @Size(max = 50000) @Schema(description = "Current problem statement markdown") String problemStatementMarkdown,
+        @NotBlank @Size(min = 1, max = 50000) @Schema(description = "Current problem statement markdown") String problemStatementMarkdown,
         @Size(max = 20) @Schema(description = "Action-specific context parameters") Map<@Size(max = 100) String, @Size(max = 10000) String> context) {
 
     /**
@@ -30,6 +30,8 @@ public record ChecklistActionRequestDTO(@NotNull @Schema(description = "Type of 
         /** Fix a single quality issue identified in the analysis */
         FIX_QUALITY_ISSUE,
         /** Fix all quality issues at once */
-        FIX_ALL_QUALITY_ISSUES
+        FIX_ALL_QUALITY_ISSUES,
+        /** Adapt the problem statement to a target difficulty level */
+        ADAPT_DIFFICULTY
     }
 }

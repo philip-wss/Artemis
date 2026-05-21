@@ -10,7 +10,6 @@ import {
     OnDestroy,
     Output,
     Signal,
-    ViewChild,
     ViewContainerRef,
     afterNextRender,
     computed,
@@ -20,10 +19,12 @@ import {
     output,
     signal,
     untracked,
+    viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { MonacoEditorComponent } from 'app/shared/monaco-editor/monaco-editor.component';
 import { MonacoEditorMode } from 'app/shared/monaco-editor/model/monaco-editor.types';
+import { EditorRange } from 'app/shared/monaco-editor/model/actions/monaco-editor.util';
 import { LineChange } from 'app/programming/shared/utils/diff.utils';
 import {
     NgbDropdown,
@@ -38,7 +39,7 @@ import {
     NgbNavOutlet,
     NgbTooltip,
 } from '@ng-bootstrap/ng-bootstrap';
-import { TextEditorAction } from 'app/shared/monaco-editor/model/actions/text-editor-action.model';
+import { TextEditorAction, TextStyleTextEditorAction } from 'app/shared/monaco-editor/model/actions/text-editor-action.model';
 import { BoldAction } from 'app/shared/monaco-editor/model/actions/bold.action';
 import { ItalicAction } from 'app/shared/monaco-editor/model/actions/italic.action';
 import { UnderlineAction } from 'app/shared/monaco-editor/model/actions/underline.action';
@@ -103,6 +104,7 @@ export enum MarkdownEditorHeight {
 }
 
 interface MarkdownActionsByGroup {
+    style: TextStyleTextEditorAction[];
     standard: TextEditorAction[];
     header: HeadingAction[];
     color?: ColorAction;
@@ -176,19 +178,20 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
     private readonly viewContainerRef = inject(ViewContainerRef);
     private readonly exerciseReviewCommentService = inject(ExerciseReviewCommentService);
 
-    @ViewChild(MonacoEditorComponent, { static: false }) monacoEditor: MonacoEditorComponent;
-    @ViewChild('fullElement', { static: true }) fullElement: ElementRef<HTMLDivElement>;
-    @ViewChild('wrapper', { static: true }) wrapper: ElementRef<HTMLDivElement>;
-    @ViewChild('fileUploadFooter', { static: false }) fileUploadFooter?: ElementRef<HTMLDivElement>;
-    @ViewChild('fileUploadInput', { static: false }) fileUploadInput?: ElementRef<HTMLInputElement>;
-    @ViewChild('resizePlaceholder', { static: false }) resizePlaceholder?: ElementRef<HTMLDivElement>;
-    @ViewChild('actionPalette', { static: false }) actionPalette?: ElementRef<HTMLElement>;
-    @ViewChild(ColorSelectorComponent, { static: false }) colorSelector: ColorSelectorComponent;
+    readonly monacoEditor = viewChild(MonacoEditorComponent);
+    readonly fullElement = viewChild.required<ElementRef<HTMLDivElement>>('fullElement');
+    readonly wrapper = viewChild.required<ElementRef<HTMLDivElement>>('wrapper');
+    readonly fileUploadFooter = viewChild<ElementRef<HTMLDivElement>>('fileUploadFooter');
+    readonly fileUploadInput = viewChild<ElementRef<HTMLInputElement>>('fileUploadInput');
+    readonly resizePlaceholder = viewChild<ElementRef<HTMLDivElement>>('resizePlaceholder');
+    readonly actionPalette = viewChild<ElementRef<HTMLElement>>('actionPalette');
+    readonly diffHeader = viewChild<ElementRef<HTMLDivElement>>('diffHeader');
+    readonly colorSelector = viewChild(ColorSelectorComponent);
 
     @Input()
     set markdown(value: string | undefined) {
         this._markdown = value;
-        this.monacoEditor?.setText(value ?? '');
+        this.monacoEditor()?.setText(value ?? '');
     }
 
     _markdown?: string;
@@ -328,6 +331,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
 
     readonly onAddReviewComment = output<{ lineNumber: number; fileName: string }>();
     readonly onNavigateToReviewCommentLocation = output<ReviewThreadLocation>();
+    readonly onApplyInlineFix = output<{ threadId: number }>();
 
     /** Emits when user selects lines in the editor (includes selectedText, position, and column info for inline refinement) */
     readonly onSelectionChange = output<EditorSelectionWithPosition | undefined>();
@@ -354,11 +358,14 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
     });
     /** Reactive translated hint text for the unified diff view (updates on language change). */
     protected readonly diffUnifiedHint = toSignal(this.translateService.stream('artemisApp.programmingExercise.problemStatement.diffView.unifiedHint'), { initialValue: '' });
+    /** Pixel width of the original (left) pane in the diff editor, used to align header labels with the sash. */
+    protected diffOriginalPaneWidth: number | undefined;
     targetWrapperHeight?: number;
     minWrapperHeight?: number;
     constrainDragPositionFn?: (pointerPosition: Point) => Point;
     isResizing = false;
     displayedActions: MarkdownActionsByGroup = {
+        style: [],
         standard: [],
         header: [],
         color: undefined,
@@ -367,6 +374,8 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
         artemisIntelligence: [],
         meta: [],
     };
+    readonly showTextStyleActions = signal<boolean>(true);
+    readonly showNonTextStyleActions = signal<boolean>(true);
 
     /**
      * Color mapping from hex codes to CSS class names.
@@ -437,7 +446,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
                 untracked(() => {
                     afterNextRender(
                         () => {
-                            if (this.monacoEditor) {
+                            if (this.monacoEditor()) {
                                 this.adjustEditorDimensions();
                             }
                         },
@@ -454,7 +463,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
      */
     protected renderEditorWidgets() {
         // Bail out until the editor is ready
-        if (!this.monacoEditor) {
+        if (!this.monacoEditor()) {
             return;
         }
 
@@ -463,7 +472,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
             untracked(() => this.getReviewCommentManager()?.renderWidgets());
         } else {
             this.reviewCommentManager?.disposeAll();
-            this.monacoEditor.clearLineDecorationsHoverButton();
+            this.monacoEditor()!.clearLineDecorationsHoverButton();
         }
     }
 
@@ -473,7 +482,8 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
         this.minWrapperHeight = this.resizableMinHeight.valueOf();
         this.constrainDragPositionFn = this.constrainDragPosition.bind(this);
         this.displayedActions = {
-            standard: this.filterDisplayedActions(this.defaultActions),
+            style: this.filterDisplayedActions(this.defaultActions).filter((action) => action instanceof TextStyleTextEditorAction) as TextStyleTextEditorAction[],
+            standard: this.filterDisplayedActions(this.defaultActions).filter((action) => !(action instanceof TextStyleTextEditorAction)),
             header: this.filterDisplayedActions(this.headerActions?.actions ?? []),
             color: this.filterDisplayedAction(this.colorAction),
             domain: {
@@ -516,18 +526,18 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
 
     ngAfterViewInit(): void {
         this.adjustEditorDimensions();
-        this.monacoEditor.setWordWrap(true);
-        this.monacoEditor.changeModel('markdown-content.custom-md', this._markdown ?? '', 'custom-md');
+        this.monacoEditor()!.setWordWrap(true);
+        this.monacoEditor()!.changeModel('markdown-content.custom-md', this._markdown ?? '', 'custom-md');
         this.resizeObserver = new ResizeObserver(() => {
             this.adjustEditorDimensions();
         });
-        this.resizeObserver.observe(this.wrapper.nativeElement);
+        this.resizeObserver.observe(this.wrapper().nativeElement);
         // Prevents the file upload footer from disappearing when switching between preview and editor.
-        if (this.fileUploadFooter?.nativeElement) {
-            this.resizeObserver.observe(this.fileUploadFooter.nativeElement);
+        if (this.fileUploadFooter()?.nativeElement) {
+            this.resizeObserver.observe(this.fileUploadFooter()!.nativeElement);
         }
-        if (this.actionPalette?.nativeElement) {
-            this.resizeObserver.observe(this.actionPalette.nativeElement);
+        if (this.actionPalette()?.nativeElement) {
+            this.resizeObserver.observe(this.actionPalette()!.nativeElement);
         }
         [
             this.defaultActions,
@@ -542,22 +552,30 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
             .forEach((action) => {
                 if (action instanceof FullscreenAction) {
                     // We include the full element if the initial height is set to 'external' so the editor is resized to fill the screen.
-                    action.element = this.isHeightManagedExternally() ? this.fullElement.nativeElement : this.wrapper.nativeElement;
+                    action.element = this.isHeightManagedExternally() ? this.fullElement().nativeElement : this.wrapper().nativeElement;
                 } else if (this.enableFileUpload && action instanceof AttachmentAction) {
                     action.setUploadCallback(this.embedFiles.bind(this));
                     action.setOpenFileDialogCallback(this.openFilePicker.bind(this));
                 }
-                this.monacoEditor.registerAction(action);
+                this.monacoEditor()!.registerAction(action);
             });
 
         if (this.useDefaultMarkdownEditorOptions) {
-            this.monacoEditor.applyOptionPreset(DEFAULT_MARKDOWN_EDITOR_OPTIONS);
+            this.monacoEditor()!.applyOptionPreset(DEFAULT_MARKDOWN_EDITOR_OPTIONS);
         }
-        // Set up selection change listener for inline comments/refinement
-        this.selectionChangeDisposable = this.monacoEditor.onSelectionChange((selection) => {
+
+        if (this.isInCommunication()) {
+            this.showTextStyleActions.set(false);
+        }
+
+        // Set up selection change listener for inline comments/refinement and hiding/showing actions in communication mode
+        this.selectionChangeDisposable = this.monacoEditor()!.onSelectionChange((selection) => {
+            if (this.isInCommunication()) {
+                this.updateEditorActionsVisibility(selection);
+            }
             if (selection) {
                 // Get selected text for inline refinement
-                const model = this.monacoEditor.getModel();
+                const model = this.monacoEditor()!.getModel();
                 const selectedText = model ? model.getValueInRange(selection) : '';
 
                 // Only emit if there's actual text selected (not just cursor movement)
@@ -588,7 +606,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
             this.cachedSelection = undefined;
             this.onSelectionChange.emit(undefined);
         };
-        this.scrollChangeDisposable = this.monacoEditor.onScrollChange(hideOnScroll);
+        this.scrollChangeDisposable = this.monacoEditor()!.onScrollChange(hideOnScroll);
         this.windowScrollHandler = hideOnScroll;
         window.addEventListener('scroll', hideOnScroll, { passive: true, capture: true });
     }
@@ -603,8 +621,8 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
         }
 
         const endPosition = { lineNumber: this.cachedSelection.endLine, column: this.cachedSelection.endColumn };
-        const coords = this.monacoEditor.getScrolledVisiblePosition(endPosition);
-        const editorDom = this.monacoEditor.getDomNode();
+        const coords = this.monacoEditor()!.getScrolledVisiblePosition(endPosition);
+        const editorDom = this.monacoEditor()!.getDomNode();
 
         if (!coords || !editorDom) {
             this.onSelectionChange.emit(undefined);
@@ -634,8 +652,8 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
     constrainDragPosition(pointerPosition: Point): Point {
         // We do not want to drag past the minimum or maximum height.
         // x is not used, so we can ignore it.
-        const minY = this.wrapper.nativeElement.getBoundingClientRect().top + this.resizableMinHeight;
-        const maxY = this.wrapper.nativeElement.getBoundingClientRect().top + this.resizableMaxHeight;
+        const minY = this.wrapper().nativeElement.getBoundingClientRect().top + this.resizableMinHeight;
+        const maxY = this.wrapper().nativeElement.getBoundingClientRect().top + this.resizableMaxHeight;
         return {
             x: pointerPosition.x,
             y: Math.min(maxY, Math.max(minY, pointerPosition.y)),
@@ -652,12 +670,25 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
         }
         this.cachedSelection = undefined;
         this.reviewCommentManager?.disposeAll();
-        this.monacoEditor?.clearLineDecorationsHoverButton();
+        this.monacoEditor()?.clearLineDecorationsHoverButton();
     }
 
     onTextChanged(event: { text: string; fileName: string }): void {
         this.markdown = event.text;
         this.markdownChange.emit(event.text);
+    }
+
+    /**
+     * Hides actions that are not applicable in the given context, and shows actions that can be used.
+     * @param selection Currently selected text
+     */
+    updateEditorActionsVisibility(selection: EditorRange | undefined): void {
+        const isEmpty = !selection || (selection.startLineNumber == selection.endLineNumber && selection.startColumn == selection.endColumn);
+        if (!isEmpty === this.showTextStyleActions() && isEmpty === this.showNonTextStyleActions()) {
+            return;
+        }
+        this.showTextStyleActions.set(!isEmpty);
+        this.showNonTextStyleActions.set(isEmpty);
     }
 
     /**
@@ -668,7 +699,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
         // This prevents the element from escaping its boundaries when being dragged. This is necessary because
         event.source.reset();
         // The editor's bottom edge becomes the top edge of the handle.
-        this.targetWrapperHeight = event.pointerPosition.y - this.wrapper.nativeElement.getBoundingClientRect().top - this.getElementClientHeight(this.resizePlaceholder) / 2;
+        this.targetWrapperHeight = event.pointerPosition.y - this.wrapper().nativeElement.getBoundingClientRect().top - this.getElementClientHeight(this.resizePlaceholder()) / 2;
     }
 
     /**
@@ -677,8 +708,8 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
      */
     onContentHeightChanged(newContentHeight: number | undefined): void {
         // Upon switching back from the preview tab, the file upload footer will briefly have a height of 0. We ignore this case to avoid an incorrect height.
-        if (this.linkEditorHeightToContentHeight && !(this.enableFileUpload && this.getElementClientHeight(this.fileUploadFooter) === 0)) {
-            const totalHeight = (newContentHeight ?? 0) + this.getElementClientHeight(this.fileUploadFooter) + this.getElementClientHeight(this.actionPalette);
+        if (this.linkEditorHeightToContentHeight && !(this.enableFileUpload && this.getElementClientHeight(this.fileUploadFooter()) === 0)) {
+            const totalHeight = (newContentHeight ?? 0) + this.getElementClientHeight(this.fileUploadFooter()) + this.getElementClientHeight(this.actionPalette());
             // Clamp the height so it is between the minimum and maximum height.
             this.targetWrapperHeight = Math.max(this.resizableMinHeight, Math.min(this.resizableMaxHeight, totalHeight));
         }
@@ -690,10 +721,11 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
      */
     getEditorHeight(): number {
         // We always use the wrapper height, as it is correctly sized by the flexbox layout in all cases (external or internal height).
-        const elementHeight = this.getElementClientHeight(this.wrapper);
-        const fileUploadFooterHeight = this.getElementClientHeight(this.fileUploadFooter);
-        const actionPaletteHeight = this.getElementClientHeight(this.actionPalette);
-        return Math.max(0, elementHeight - fileUploadFooterHeight - actionPaletteHeight - BORDER_HEIGHT_OFFSET);
+        const elementHeight = this.getElementClientHeight(this.wrapper());
+        const fileUploadFooterHeight = this.getElementClientHeight(this.fileUploadFooter());
+        const actionPaletteHeight = this.getElementClientHeight(this.actionPalette());
+        const diffHeaderHeight = this.getElementClientHeight(this.diffHeader());
+        return Math.max(0, elementHeight - fileUploadFooterHeight - actionPaletteHeight - diffHeaderHeight - BORDER_HEIGHT_OFFSET);
     }
 
     /**
@@ -708,18 +740,28 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
      * Computes the width the editor can take up. To prevent the editor from obscuring the border, we subtract a fixed offset.
      */
     getEditorWidth(): number {
-        return this.wrapper.nativeElement.clientWidth - BORDER_WIDTH_OFFSET;
+        return this.wrapper().nativeElement.clientWidth - BORDER_WIDTH_OFFSET;
     }
 
     /**
      * Adjust the dimensions of the editor to fit the available space.
      */
     adjustEditorDimensions(): void {
-        this.onContentHeightChanged(this.monacoEditor.getContentHeight());
+        this.onContentHeightChanged(this.monacoEditor()!.getContentHeight());
         const editorHeight = this.getEditorHeight();
-        this.monacoEditor.layoutWithFixedSize(this.getEditorWidth(), editorHeight);
+        this.monacoEditor()!.layoutWithFixedSize(this.getEditorWidth(), editorHeight);
         // Prevents an issue with line wraps in the editor
-        this.monacoEditor.layout();
+        this.monacoEditor()!.layout();
+    }
+
+    /**
+     * Called when a nav tab is shown. Adjusts editor dimensions and focuses the editor if the edit tab is active.
+     */
+    onTabShown(): void {
+        if (this.inEditMode) {
+            this.adjustEditorDimensions();
+            this.monacoEditor()!.focus();
+        }
     }
 
     /**
@@ -731,8 +773,6 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
         this.inVisualMode = event.nextId === this.TAB_VISUAL;
         this.inEditMode = event.nextId === this.TAB_EDIT;
         if (this.inEditMode) {
-            this.adjustEditorDimensions();
-            this.monacoEditor.focus();
             this.onEditSelect.emit();
         } else if (this.inPreviewMode) {
             this.onPreviewSelect.emit();
@@ -752,6 +792,10 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
 
     onDiffChanged(event: { ready: boolean; lineChange: LineChange }): void {
         this.diffLineChange.emit(event);
+    }
+
+    onDiffOriginalPaneLayoutChanged(originalWidth: number): void {
+        this.diffOriginalPaneWidth = originalWidth;
     }
 
     parseMarkdown(domainActionsToCheck: TextEditorDomainAction[] = this.domainActions): void {
@@ -778,7 +822,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
      * Opens the file picker dialog to allow the user to select files for upload.
      */
     openFilePicker(): void {
-        this.fileUploadInput?.nativeElement.click();
+        this.fileUploadInput()?.nativeElement.click();
     }
 
     /**
@@ -856,7 +900,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
     openColorSelector(event: MouseEvent): void {
         const marginTop = this.colorPickerMarginTop;
         const height = this.colorPickerHeight;
-        this.colorSelector.openColorSelector(event, marginTop, height);
+        this.colorSelector()!.openColorSelector(event, marginTop, height);
     }
 
     /**
@@ -882,7 +926,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
      * Enable the text field mode of the editor. This makes the editor look and behave like a normal text field.
      */
     enableTextFieldMode(): void {
-        this.monacoEditor.applyOptionPreset(COMMUNICATION_MARKDOWN_EDITOR_OPTIONS);
+        this.monacoEditor()!.applyOptionPreset(COMMUNICATION_MARKDOWN_EDITOR_OPTIONS);
     }
 
     /**
@@ -890,7 +934,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
      * @param preset The preset to apply.
      */
     applyOptionPreset(preset: MonacoEditorOptionPreset): void {
-        this.monacoEditor.applyOptionPreset(preset);
+        this.monacoEditor()!.applyOptionPreset(preset);
     }
 
     /**
@@ -912,11 +956,11 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
     }
 
     private getReviewCommentManager(): ReviewCommentWidgetManager | undefined {
-        if (!this.monacoEditor) {
+        if (!this.monacoEditor()) {
             return undefined;
         }
         if (!this.reviewCommentManager) {
-            this.reviewCommentManager = new ReviewCommentWidgetManager(this.monacoEditor, this.viewContainerRef, {
+            this.reviewCommentManager = new ReviewCommentWidgetManager(this.monacoEditor()!, this.viewContainerRef, {
                 hoverButtonClass: REVIEW_COMMENT_HOVER_BUTTON_CLASS,
                 shouldShowHoverButton: () => this.enableExerciseReviewComments() && this.inEditMode,
                 canSubmit: () => this.inEditMode && !this.showLocationWarning(),
@@ -928,6 +972,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
                 filterThread: (thread) => this.isProblemStatementThread(thread),
                 getThreadLine: (thread) => this.getProblemStatementThreadLine(thread),
                 onAdd: (payload) => this.onAddReviewComment.emit(payload),
+                onApplyInlineFix: ({ thread }) => this.onApplyInlineFix.emit({ threadId: thread.id }),
                 onNavigateToLocation: (location) => this.onNavigateToReviewCommentLocation.emit(location),
                 showLocationWarning: () => this.showLocationWarning(),
             });
@@ -948,10 +993,10 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
      * @returns The current selection or undefined.
      */
     getSelection(): { startLine: number; endLine: number; startColumn: number; endColumn: number } | undefined {
-        if (!this.monacoEditor) {
+        if (!this.monacoEditor()) {
             return undefined;
         }
-        const sel = this.monacoEditor.getSelection();
+        const sel = this.monacoEditor()!.getSelection();
         if (!sel) {
             return undefined;
         }
@@ -969,7 +1014,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
      * @param content The new content to apply.
      */
     applyDiffContent(content: string): void {
-        this.monacoEditor?.applyDiffContent(content);
+        this.monacoEditor()?.applyDiffContent(content);
     }
 
     /**
@@ -986,7 +1031,7 @@ export class MarkdownEditorMonacoComponent implements AfterContentInit, AfterVie
      * by restoring the snapshot taken when diff mode was entered.
      */
     revertAll(): void {
-        this.monacoEditor?.revertAll();
+        this.monacoEditor()?.revertAll();
     }
 
     /**
