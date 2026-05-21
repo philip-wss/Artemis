@@ -134,9 +134,10 @@ def collect_entity_counts(
     logging.info("Querying Weaviate at %s for entity counts (collection: %s)", weaviate_url, collection_name)
 
     counts: dict[str, int] = {}
-    counts["total"] = _graphql_count(weaviate_url, headers, collection_name, None)
     for t in entity_types:
         counts[t] = _graphql_count(weaviate_url, headers, collection_name, t)
+    known = [c for c in counts.values() if c >= 0]
+    counts["total"] = sum(known) if known else -1
 
     return counts
 
