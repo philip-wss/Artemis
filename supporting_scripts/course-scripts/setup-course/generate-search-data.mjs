@@ -62,8 +62,12 @@ const SAMPLE_PDF_BASE64 = `JVBERi0xLjQKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZ
 // ---------------------------------------------------------------------------
 
 let shortNameCounter = 0;
+// 4-char base-36 suffix derived from the current epoch second — changes each run so
+// re-running the script does not collide with short names created in a previous run.
+// Short names must match ^[a-zA-Z][a-zA-Z0-9]{2,} and stay under 24 chars.
+const RUN_SUFFIX = Math.floor(Date.now() / 1000).toString(36).slice(-4);
 function uniqueShortName(prefix) {
-    return `${prefix}${++shortNameCounter}`;
+    return `${prefix}${++shortNameCounter}${RUN_SUFFIX}`;
 }
 
 function daysFromNow(days) {
@@ -120,10 +124,13 @@ async function createCourse(client, courseData, courseIndex) {
         maxComplaintTimeDays: 7,
         maxRequestMoreFeedbackTimeDays: 7,
     };
-        const formData = new FormData();
-    formData.append('course', new Blob([JSON.stringify(course)], { type: 'application/json' }));
-    const response = await client.post('/api/core/admin/courses', formData, {
+    const { body, contentType } = createMultipartFormData({ course });
+    const response = await client.post('/api/core/admin/courses', body, {
+        headers: { 'Content-Type': contentType },
         contentType: 'multipart',
+    }).catch(e => {
+        const detail = typeof e.response?.data === 'string' ? e.response.data : JSON.stringify(e.response?.data);
+        throw new Error(`Course creation failed (HTTP ${e.response?.status}): ${detail || e.message}`);
     });
     return response.data;
 }
