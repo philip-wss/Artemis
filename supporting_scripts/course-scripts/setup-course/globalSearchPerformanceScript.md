@@ -14,16 +14,17 @@ To validate and benchmark Weaviate global search performance, we need a large, r
 
 - `supporting_scripts/course-scripts/setup-course/generate-search-data.mjs` -- Main orchestration script
 - `supporting_scripts/course-scripts/setup-course/search-data/index.mjs` -- Course theme index
-- `supporting_scripts/course-scripts/setup-course/search-data/*.mjs` -- 10 course theme data files
+- `supporting_scripts/course-scripts/setup-course/search-data/*.mjs` -- 15 course theme data files
 
 **Per course the script creates:**
 - 70 exercises (40 programming, 10 text, 8 modeling, 6 quiz, 6 file-upload)
+- 50 messages per exercise channel (posted to each exercise's auto-created channel)
 - 20 lectures with 5 units each (text, online, attachment)
 - 20 FAQs
 - 2 exams (1 past, 1 future) with 5 exercise groups x 3 exercises each
 - 1 public channel with 15 messages
 
-**10 CS course themes:** Software Engineering, Algorithms & Data Structures, Machine Learning, Database Systems, Computer Networks, Operating Systems, Distributed Systems, Cybersecurity, Web Development, Computer Architecture
+**15 CS course themes:** Software Engineering, Algorithms & Data Structures, Machine Learning, Database Systems, Computer Networks, Operating Systems, Distributed Systems, Cybersecurity, Web Development, Computer Architecture, Compiler Design, Computer Graphics, Artificial Intelligence, Embedded Systems, Theoretical Computer Science
 
 **Key design decisions:**
 - **Data-driven architecture**: Each course theme is a separate `.mjs` file (~50KB each) to keep individual file sizes manageable. A `fill()` function cycles through available data to reach target counts.

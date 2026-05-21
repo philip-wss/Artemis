@@ -14,6 +14,7 @@
  *   - 20 lectures with 5 units each
  *   - 20 FAQs
  *   - 2 exams (1 past, 1 future) with 5 exercise groups x 3 exercises each
+ *   - 50 messages per exercise channel
  *   - 1 public channel with 15 messages
  *
  * Content is theme-consistent per course (CS topics). Some dates are in the past,
@@ -42,6 +43,7 @@ const TARGET_LECTURES = 20;
 const TARGET_LECTURE_UNITS = 5;
 const TARGET_FAQS = 20;
 const TARGET_CHANNEL_MESSAGES = 15;
+const TARGET_EXERCISE_MESSAGES = 50;
 
 // Exercise type distribution for 70 exercises (majority programming)
 const EXERCISE_DISTRIBUTION = {
@@ -435,6 +437,28 @@ async function createFaq(client, courseId, faq) {
     return client.post(`/api/communication/courses/${courseId}/faqs`, data);
 }
 
+// -- Exercise Channel Messages ------------------------------------------------
+
+async function getExerciseChannel(client, courseId, exerciseId) {
+    try {
+        return (await client.get(`/api/communication/courses/${courseId}/exercises/${exerciseId}/channel`)).data;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function postExerciseMessages(client, courseId, exerciseId, messagePool, count) {
+    const channel = await getExerciseChannel(client, courseId, exerciseId);
+    if (!channel) return 0;
+    const msgs = fill(messagePool, count);
+    let posted = 0;
+    for (const msg of msgs) {
+        const result = await postMessage(client, courseId, channel.id, msg);
+        if (result) posted++;
+    }
+    return posted;
+}
+
 // -- Channel & Messages -------------------------------------------------------
 
 async function createChannel(client, courseId, name) {
@@ -482,10 +506,12 @@ async function buildOneCourse(client, courseData, courseIndex) {
     const courseId = course.id;
     console.log(`  Course created (id=${courseId})`);
 
-    // 2. Exercises (70 total)
+    // 2. Exercises (70 total) with messages per exercise channel
     console.log('  Creating exercises...');
     const createdExercises = [];
     let exerciseErrorCount = 0;
+    let exerciseMsgTotal = 0;
+    const exerciseMessagePool = courseData.exerciseMessages || courseData.channelMessages || [];
     for (const [type, count] of Object.entries(EXERCISE_DISTRIBUTION)) {
         const pool = courseData.exercises[type === 'file-upload' ? 'fileUpload' : type] || [];
         const items = fill(pool, count);
@@ -498,7 +524,11 @@ async function buildOneCourse(client, courseData, courseIndex) {
                 else if (type === 'modeling') ex = await createModelingExercise(client, courseId, items[i], releasePast);
                 else if (type === 'quiz') ex = await createQuizExercise(client, courseId, items[i], releasePast);
                 else if (type === 'file-upload') ex = await createFileUploadExercise(client, courseId, items[i], releasePast);
-                if (ex) createdExercises.push(ex);
+                if (ex) {
+                    createdExercises.push(ex);
+                    const posted = await postExerciseMessages(client, courseId, ex.id, exerciseMessagePool, TARGET_EXERCISE_MESSAGES);
+                    exerciseMsgTotal += posted;
+                }
             } catch (e) {
                 exerciseErrorCount++;
                 if (exerciseErrorCount <= 3) {
@@ -507,7 +537,7 @@ async function buildOneCourse(client, courseData, courseIndex) {
             }
         }
     }
-    console.log(`  Created ${createdExercises.length} exercises (${exerciseErrorCount} errors)`);
+    console.log(`  Created ${createdExercises.length} exercises (${exerciseErrorCount} errors), ${exerciseMsgTotal} exercise messages`);
 
     // 3. Lectures (20 with 5 units each)
     console.log('  Creating lectures...');

@@ -13,6 +13,11 @@ import distributedSystems from './distributed-systems.mjs';
 import cybersecurity from './cybersecurity.mjs';
 import webDevelopment from './web-development.mjs';
 import computerArchitecture from './computer-architecture.mjs';
+import compilerDesign from './compiler-design.mjs';
+import computerGraphics from './computer-graphics.mjs';
+import artificialIntelligence from './artificial-intelligence.mjs';
+import embeddedSystems from './embedded-systems.mjs';
+import theoreticalCs from './theoretical-cs.mjs';
 
 export const ALL_COURSES = [
     softwareEngineering,
@@ -25,4 +30,9 @@ export const ALL_COURSES = [
     cybersecurity,
     webDevelopment,
     computerArchitecture,
+    compilerDesign,
+    computerGraphics,
+    artificialIntelligence,
+    embeddedSystems,
+    theoreticalCs,
 ];
