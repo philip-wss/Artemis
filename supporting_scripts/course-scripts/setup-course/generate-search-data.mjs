@@ -70,6 +70,11 @@ function uniqueShortName(prefix) {
     return `${prefix}${++shortNameCounter}${RUN_SUFFIX}`;
 }
 
+/** Strip characters disallowed by Artemis TITLE_NAME_PATTERN (^[a-zA-Z0-9_\-\s]*) */
+function sanitizeProgrammingTitle(title) {
+    return title.replace(/[^a-zA-Z0-9_\-\s]/g, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+
 function daysFromNow(days) {
     return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
@@ -144,7 +149,7 @@ async function createProgrammingExercise(client, courseId, data, releasePast) {
 
     const exercise = {
         type: 'programming',
-        title: data.title,
+        title: sanitizeProgrammingTitle(data.title),
         shortName: sn,
         course: { id: courseId },
         programmingLanguage: 'JAVA',
@@ -363,7 +368,7 @@ async function createExamExercise(client, courseId, groupId, title, type, course
     if (type === 'programming') {
         const exercise = {
             type: 'programming',
-            title,
+            title: sanitizeProgrammingTitle(title),
             shortName: sn,
             exerciseGroup: { id: groupId },
             programmingLanguage: 'JAVA',
@@ -499,7 +504,11 @@ async function postMessage(client, courseId, channelId, content) {
         conversation: { id: channelId },
     };
     try {
-        return (await client.post(`/api/communication/courses/${courseId}/messages`, post)).data;
+        const result = (await client.post(`/api/communication/courses/${courseId}/messages`, post)).data;
+        // Throttle: each message triggers async push-notification tasks; posting too fast fills the
+        // server's thread pool and causes TaskRejectedException for subsequent requests.
+        await new Promise(r => setTimeout(r, 200));
+        return result;
     } catch (e) {
         return null;
     }
@@ -534,8 +543,12 @@ async function buildOneCourse(client, courseData, courseIndex) {
             const releasePast = pastRatio ? i < items.length / 2 : i >= items.length / 2;
             try {
                 let ex;
-                if (type === 'programming') ex = await createProgrammingExercise(client, courseId, items[i], releasePast);
-                else if (type === 'text') ex = await createTextExercise(client, courseId, items[i], releasePast);
+                if (type === 'programming') {
+                    ex = await createProgrammingExercise(client, courseId, items[i], releasePast);
+                    // Throttle: programming exercise creation triggers async repo/CI setup server-side;
+                    // without a pause the executor queue fills up and subsequent requests get rejected.
+                    await new Promise(r => setTimeout(r, 2000));
+                } else if (type === 'text') ex = await createTextExercise(client, courseId, items[i], releasePast);
                 else if (type === 'modeling') ex = await createModelingExercise(client, courseId, items[i], releasePast);
                 else if (type === 'quiz') ex = await createQuizExercise(client, courseId, items[i], releasePast);
                 else if (type === 'file-upload') ex = await createFileUploadExercise(client, courseId, items[i], releasePast);
