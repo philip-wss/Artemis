@@ -115,6 +115,10 @@ async function createCourse(client, courseData, courseIndex) {
         courseInformationSharingConfiguration: 'COMMUNICATION_AND_MESSAGING',
         accuracyOfScores: 1,
         timeZone: 'Europe/Berlin',
+        maxComplaints: 3,
+        maxTeamComplaints: 3,
+        maxComplaintTimeDays: 7,
+        maxRequestMoreFeedbackTimeDays: 7,
     };
     const { body, contentType } = createMultipartFormData({ course });
     const response = await client.post('/api/core/admin/courses', body, {
@@ -642,5 +646,8 @@ async function run() {
 
 run().catch(err => {
     console.error('Fatal error:', err.message);
+    if (err.response?.data) {
+        console.error('Server response:', JSON.stringify(err.response.data, null, 2));
+    }
     process.exit(1);
 });
