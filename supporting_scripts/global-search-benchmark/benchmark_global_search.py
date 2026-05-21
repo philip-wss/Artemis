@@ -88,7 +88,7 @@ def _graphql_count(
     """Return the number of Weaviate objects matching the given type (or all if None)."""
     if entity_type:
         where_clause = (
-            f', where: {{ path: ["type"], operator: Equal, valueText: "{entity_type}" }}'
+            f'(where: {{ path: ["type"], operator: Equal, valueText: "{entity_type}" }})'
         )
     else:
         where_clause = ""
