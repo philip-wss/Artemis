@@ -120,9 +120,9 @@ async function createCourse(client, courseData, courseIndex) {
         maxComplaintTimeDays: 7,
         maxRequestMoreFeedbackTimeDays: 7,
     };
-    const { body, contentType } = createMultipartFormData({ course });
-    const response = await client.post('/api/core/admin/courses', body, {
-        headers: { 'Content-Type': contentType },
+        const formData = new FormData();
+    formData.append('course', new Blob([JSON.stringify(course)], { type: 'application/json' }));
+    const response = await client.post('/api/core/admin/courses', formData, {
         contentType: 'multipart',
     });
     return response.data;
@@ -145,6 +145,7 @@ async function createProgrammingExercise(client, courseId, data, releasePast) {
         maxPoints: 100,
         assessmentType: 'AUTOMATIC',
         packageName: 'de.tum.cit.aet',
+        allowOnlineEditor: true,
         releaseDate,
         dueDate,
         problemStatement: `# ${data.title}\n\n${data.problemStatement}`,
@@ -362,6 +363,7 @@ async function createExamExercise(client, courseId, groupId, title, type, course
             maxPoints: 20,
             assessmentType: 'AUTOMATIC',
             packageName: 'de.tum.cit.aet',
+            allowOnlineEditor: true,
             problemStatement: `Implement: ${title}`,
             buildConfig: {
                 buildScript: '#!/usr/bin/env bash\nset -e\nchmod +x ./gradlew && ./gradlew clean test',
@@ -536,7 +538,8 @@ async function buildOneCourse(client, courseData, courseIndex) {
             } catch (e) {
                 exerciseErrorCount++;
                 if (exerciseErrorCount <= 3) {
-                    console.log(`    Error creating ${type} exercise: ${e.response?.data?.message || e.message}`);
+                    const detail = typeof e.response?.data === 'string' ? e.response.data : JSON.stringify(e.response?.data);
+                    console.log(`    Error creating ${type} exercise: ${e.message} — ${detail}`);
                 }
             }
         }
@@ -646,8 +649,8 @@ async function run() {
 
 run().catch(err => {
     console.error('Fatal error:', err.message);
-    if (err.response?.data) {
-        console.error('Server response:', JSON.stringify(err.response.data, null, 2));
-    }
+    console.error('Response content-type:', err.response?.contentType);
+    console.error('Response data type:', typeof err.response?.data);
+    console.error('Response data:', err.response?.data);
     process.exit(1);
 });

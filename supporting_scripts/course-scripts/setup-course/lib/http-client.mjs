@@ -77,7 +77,7 @@ export class HttpClient {
 
         if (!response.ok && response.status !== 201) {
             const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
-            error.response = { status: response.status, data };
+            error.response = { status: response.status, data, contentType };
             throw error;
         }
 
