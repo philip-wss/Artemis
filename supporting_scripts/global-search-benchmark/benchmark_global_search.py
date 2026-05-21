@@ -296,6 +296,31 @@ def generate_markdown_report(
     lines.append(f"**Generated:** {run_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
     lines.append("")
 
+    # --- Methodology / how to read ---
+    lines.append("## How to Read This Report")
+    lines.append("")
+    lines.append(
+        "Each query is issued `iterations` times without warm-up. "
+        "The following latency statistics are reported per query:"
+    )
+    lines.append("")
+    lines.append("| Metric | Meaning |")
+    lines.append("|--------|---------|")
+    lines.append("| **Min** | Fastest observed response time. |")
+    lines.append("| **Max** | Slowest observed response time. |")
+    lines.append("| **Mean** | Arithmetic average across all iterations. |")
+    lines.append("| **Median** | Middle value (50th percentile) — robust to outliers. |")
+    lines.append("| **p95** | 95th-percentile latency: 95 % of requests completed within this time. Captures typical tail latency. |")
+    lines.append("| **p99** | 99th-percentile latency: 99 % of requests completed within this time. Captures worst-case tail latency. |")
+    lines.append("")
+    lines.append(
+        "> **Note:** With a small iteration count (e.g. 20) the p95 and p99 values "
+        "collapse to the observed maximum because there are too few samples to "
+        "distinguish the top 5 % from the top 1 %. Increase `iterations` in "
+        "`config.ini` for more meaningful percentile resolution."
+    )
+    lines.append("")
+
     # --- Environment ---
     lines.append("## Environment")
     lines.append("")
