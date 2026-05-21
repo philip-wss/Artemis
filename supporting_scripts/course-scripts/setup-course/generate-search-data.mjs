@@ -33,6 +33,8 @@ const args = process.argv.slice(2);
 const serverUrl = args.find(a => !a.startsWith('--')) || 'http://localhost:8080';
 const coursesFlag = args.indexOf('--courses');
 const NUM_COURSES = coursesFlag !== -1 ? parseInt(args[coursesFlag + 1], 10) : 30;
+const parallelFlag = args.indexOf('--parallel');
+const PARALLEL_COURSES = parallelFlag !== -1 ? parseInt(args[parallelFlag + 1], 10) : 3;
 
 const ADMIN_USER = 'artemis_admin';
 const ADMIN_PASSWORD = 'artemis_admin';
@@ -56,6 +58,22 @@ const EXERCISE_DISTRIBUTION = {
 
 // Minimal valid PDF for attachment units
 const SAMPLE_PDF_BASE64 = `JVBERi0xLjQKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKL01lZGlhQm94IFswIDAgNjEyIDc5Ml0KPj4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgovUmVzb3VyY2VzIDw8Ci9Gb250IDw8Ci9GMSA0IDAgUgo+Pgo+PgovQ29udGVudHMgNSAwIFIKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL1R5cGUgL0ZvbnQKL1N1YnR5cGUgL1R5cGUxCi9CYXNlRm9udCAvSGVsdmV0aWNhCj4+CmVuZG9iago1IDAgb2JqCjw8Ci9MZW5ndGggNDQKPj4Kc3RyZWFtCkJUCi9GMSAyNCBUZgoxMDAgNzAwIFRkCihTYW1wbGUgRG9jdW1lbnQpIFRqCkVUCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDE0NyAwMDAwMCBuIAowMDAwMDAwMjc0IDAwMDAwIG4gCjAwMDAwMDAzNTMgMDAwMDAgbiAKdHJhaWxlcgo8PAovU2l6ZSA2Ci9Sb290IDEgMCBSCj4+CnN0YXJ0eHJlZgo0NDgKJSVFT0Y=`;
+
+// ---------------------------------------------------------------------------
+// Concurrency helper — bounded parallel execution without external deps
+// ---------------------------------------------------------------------------
+
+function pLimit(concurrency) {
+    let active = 0;
+    const queue = [];
+    const next = () => {
+        if (active >= concurrency || queue.length === 0) return;
+        active++;
+        const { fn, resolve, reject } = queue.shift();
+        fn().then(resolve, reject).finally(() => { active--; next(); });
+    };
+    return fn => new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); next(); });
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -471,12 +489,8 @@ async function postExerciseMessages(client, courseId, exerciseId, messagePool, c
     const channel = await getExerciseChannel(client, courseId, exerciseId);
     if (!channel) return 0;
     const msgs = fill(messagePool, count);
-    let posted = 0;
-    for (const msg of msgs) {
-        const result = await postMessage(client, courseId, channel.id, msg);
-        if (result) posted++;
-    }
-    return posted;
+    const results = await Promise.allSettled(msgs.map(msg => postMessage(client, courseId, channel.id, msg)));
+    return results.filter(r => r.status === 'fulfilled' && r.value).length;
 }
 
 // -- Channel & Messages -------------------------------------------------------
@@ -504,11 +518,7 @@ async function postMessage(client, courseId, channelId, content) {
         conversation: { id: channelId },
     };
     try {
-        const result = (await client.post(`/api/communication/courses/${courseId}/messages`, post)).data;
-        // Throttle: each message triggers async push-notification tasks; posting too fast fills the
-        // server's thread pool and causes TaskRejectedException for subsequent requests.
-        await new Promise(r => setTimeout(r, 50));
-        return result;
+        return (await client.post(`/api/communication/courses/${courseId}/messages`, post)).data;
     } catch (e) {
         return null;
     }
@@ -532,92 +542,88 @@ async function buildOneCourse(client, courseData, courseIndex) {
 
     // 2. Exercises (70 total) with messages per exercise channel
     const totalExercises = Object.values(EXERCISE_DISTRIBUTION).reduce((a, b) => a + b, 0);
-    console.log(`  Creating exercises (0/${totalExercises})...`);
+    console.log(`  [${courseId}] Creating exercises (${totalExercises} total)...`);
     const createdExercises = [];
     let exerciseErrorCount = 0;
     let exerciseMsgTotal = 0;
-    let exerciseDoneCount = 0;
     const exerciseMessagePool = courseData.exerciseMessages || courseData.channelMessages || [];
+
+    // Programming exercises run with low concurrency (git/CI setup is heavy server-side).
+    // Non-programming exercises run fully in parallel — they're cheap REST operations.
+    const progLimit = pLimit(3);
+    const otherLimit = pLimit(10);
+
+    async function buildExercise(type, item, i, count) {
+        const releasePast = pastRatio ? i < count / 2 : i >= count / 2;
+        try {
+            let ex;
+            if (type === 'programming') {
+                ex = await createProgrammingExercise(client, courseId, item, releasePast);
+                // Small delay so the git/CI async tasks have time to enqueue before the next one arrives.
+                // 200 ms is enough with queue-capacity: 50000 (previously 2000 ms).
+                await new Promise(r => setTimeout(r, 200));
+            } else if (type === 'text') {
+                ex = await createTextExercise(client, courseId, item, releasePast);
+            } else if (type === 'modeling') {
+                ex = await createModelingExercise(client, courseId, item, releasePast);
+            } else if (type === 'quiz') {
+                ex = await createQuizExercise(client, courseId, item, releasePast);
+            } else if (type === 'file-upload') {
+                ex = await createFileUploadExercise(client, courseId, item, releasePast);
+            }
+            if (ex) {
+                createdExercises.push(ex);
+                const posted = await postExerciseMessages(client, courseId, ex.id, exerciseMessagePool, TARGET_EXERCISE_MESSAGES);
+                exerciseMsgTotal += posted;
+                console.log(`  [${courseId}] Exercise created: [${type}] ${item.title} (id=${ex.id}), ${posted} msgs`);
+            }
+        } catch (e) {
+            exerciseErrorCount++;
+            const detail = typeof e.response?.data === 'string' ? e.response.data : JSON.stringify(e.response?.data);
+            console.log(`  [${courseId}] Exercise ERROR [${type}] ${item.title}: ${e.message}${exerciseErrorCount <= 3 ? '\n      ' + detail : ''}`);
+        }
+    }
+
+    const exerciseTasks = [];
     for (const [type, count] of Object.entries(EXERCISE_DISTRIBUTION)) {
         const pool = courseData.exercises[type === 'file-upload' ? 'fileUpload' : type] || [];
         const items = fill(pool, count);
+        const limiter = type === 'programming' ? progLimit : otherLimit;
         for (let i = 0; i < items.length; i++) {
-            const releasePast = pastRatio ? i < items.length / 2 : i >= items.length / 2;
-            process.stdout.write(`    [${type} ${i + 1}/${count}] ${items[i].title}...`);
-            try {
-                let ex;
-                if (type === 'programming') {
-                    ex = await createProgrammingExercise(client, courseId, items[i], releasePast);
-                    // Throttle: programming exercise creation triggers async repo/CI setup server-side;
-                    // without a pause the executor queue fills up and subsequent requests get rejected.
-                    await new Promise(r => setTimeout(r, 2000));
-                } else if (type === 'text') ex = await createTextExercise(client, courseId, items[i], releasePast);
-                else if (type === 'modeling') ex = await createModelingExercise(client, courseId, items[i], releasePast);
-                else if (type === 'quiz') ex = await createQuizExercise(client, courseId, items[i], releasePast);
-                else if (type === 'file-upload') ex = await createFileUploadExercise(client, courseId, items[i], releasePast);
-                if (ex) {
-                    createdExercises.push(ex);
-                    process.stdout.write(` created (id=${ex.id}), posting messages...`);
-                    const posted = await postExerciseMessages(client, courseId, ex.id, exerciseMessagePool, TARGET_EXERCISE_MESSAGES);
-                    exerciseMsgTotal += posted;
-                    exerciseDoneCount++;
-                    process.stdout.write(` ${posted} msgs. [${exerciseDoneCount}/${totalExercises}]\n`);
-                } else {
-                    process.stdout.write(` skipped\n`);
-                }
-            } catch (e) {
-                exerciseErrorCount++;
-                const detail = typeof e.response?.data === 'string' ? e.response.data : JSON.stringify(e.response?.data);
-                process.stdout.write(` ERROR: ${e.message}\n`);
-                if (exerciseErrorCount <= 3) {
-                    console.log(`      ${detail}`);
-                }
-            }
+            exerciseTasks.push(limiter(() => buildExercise(type, items[i], i, count)));
         }
     }
-    console.log(`  Created ${createdExercises.length}/${totalExercises} exercises (${exerciseErrorCount} errors), ${exerciseMsgTotal} exercise messages`);
+    await Promise.allSettled(exerciseTasks);
+    console.log(`  [${courseId}] Created ${createdExercises.length}/${totalExercises} exercises (${exerciseErrorCount} errors), ${exerciseMsgTotal} exercise messages`);
 
-    // 3. Lectures (20 with 5 units each)
-    console.log('  Creating lectures...');
+    // 3. Lectures (20 with 5 units each) — lectures in parallel, units within each in parallel
+    console.log(`  [${courseId}] Creating lectures...`);
     const lecturePool = fill(courseData.lectures, TARGET_LECTURES);
-    let lectureCount = 0;
-    for (let i = 0; i < lecturePool.length; i++) {
-        const releasePast = i < lecturePool.length / 2;
-        try {
-            const lecture = await createLecture(client, courseId, lecturePool[i], releasePast);
-            const units = fill(lecturePool[i].units, TARGET_LECTURE_UNITS);
-            for (const unit of units) {
-                try {
-                    if (unit.type === 'text') await createTextUnit(client, lecture.id, unit, releasePast);
-                    else if (unit.type === 'online') await createOnlineUnit(client, lecture.id, unit, releasePast);
-                    else if (unit.type === 'attachment') await createAttachmentUnit(client, lecture.id, unit, releasePast);
-                } catch (e) {
-                    // skip unit errors silently
-                }
-            }
-            lectureCount++;
-        } catch (e) {
-            console.log(`    Error creating lecture: ${e.response?.data?.message || e.message}`);
-        }
-    }
-    console.log(`  Created ${lectureCount} lectures`);
+    const lectureLimit = pLimit(5);
+    const lectureResults = await Promise.allSettled(lecturePool.map((ldata, i) =>
+        lectureLimit(async () => {
+            const releasePast = i < lecturePool.length / 2;
+            const lecture = await createLecture(client, courseId, ldata, releasePast);
+            const units = fill(ldata.units, TARGET_LECTURE_UNITS);
+            await Promise.allSettled(units.map(unit => {
+                if (unit.type === 'text') return createTextUnit(client, lecture.id, unit, releasePast);
+                if (unit.type === 'online') return createOnlineUnit(client, lecture.id, unit, releasePast);
+                if (unit.type === 'attachment') return createAttachmentUnit(client, lecture.id, unit, releasePast);
+            }));
+        })
+    ));
+    const lectureCount = lectureResults.filter(r => r.status === 'fulfilled').length;
+    console.log(`  [${courseId}] Created ${lectureCount} lectures`);
 
-    // 4. FAQs (20)
-    console.log('  Creating FAQs...');
+    // 4. FAQs (20) — all in parallel, no ordering dependency
+    console.log(`  [${courseId}] Creating FAQs...`);
     const faqPool = fill(courseData.faqs, TARGET_FAQS);
-    let faqCount = 0;
-    for (const faq of faqPool) {
-        try {
-            await createFaq(client, courseId, faq);
-            faqCount++;
-        } catch (e) {
-            // skip
-        }
-    }
-    console.log(`  Created ${faqCount} FAQs`);
+    const faqResults = await Promise.allSettled(faqPool.map(faq => createFaq(client, courseId, faq)));
+    const faqCount = faqResults.filter(r => r.status === 'fulfilled').length;
+    console.log(`  [${courseId}] Created ${faqCount} FAQs`);
 
     // 5. Exams (1 past, 1 future) with 5 exercise groups x 3 exercises
-    console.log('  Creating exams...');
+    console.log(`  [${courseId}] Creating exams...`);
     const examTypes = ['programming', 'text', 'modeling', 'quiz', 'file-upload'];
     for (const isPast of [true, false]) {
         const examLabel = isPast ? 'Past' : 'Upcoming';
@@ -635,33 +641,30 @@ async function buildOneCourse(client, courseData, courseIndex) {
                     }
                 }
             }
-            console.log(`  Created ${examLabel} exam (id=${exam.id})`);
+            console.log(`  [${courseId}] Created ${examLabel} exam (id=${exam.id})`);
         } catch (e) {
-            console.log(`  Error creating ${examLabel} exam: ${e.response?.data?.message || e.message}`);
+            console.log(`  [${courseId}] Error creating ${examLabel} exam: ${e.response?.data?.message || e.message}`);
         }
     }
 
-    // 6. Channel with messages
-    console.log('  Creating channel and messages...');
+    // 6. Channel with messages — all messages posted in parallel
+    console.log(`  [${courseId}] Creating channel and messages...`);
     const channelName = courseData.shortNamePrefix.toLowerCase() + '-discussion';
     const channel = await createChannel(client, courseId, channelName);
     if (channel) {
         const msgs = fill(courseData.channelMessages, TARGET_CHANNEL_MESSAGES);
-        let msgCount = 0;
-        for (const msg of msgs) {
-            const result = await postMessage(client, courseId, channel.id, msg);
-            if (result) msgCount++;
-        }
-        console.log(`  Posted ${msgCount} messages in #${channelName}`);
+        const msgResults = await Promise.allSettled(msgs.map(msg => postMessage(client, courseId, channel.id, msg)));
+        const msgCount = msgResults.filter(r => r.status === 'fulfilled' && r.value).length;
+        console.log(`  [${courseId}] Posted ${msgCount} messages in #${channelName}`);
     }
 
-    console.log(`  Done with "${courseData.title}"`);
+    console.log(`  [${courseId}] Done with "${courseData.title}"`);
 }
 
 async function run() {
     console.log(`=== Weaviate Search Test Data Generator ===`);
     console.log(`Server: ${serverUrl}`);
-    console.log(`Courses: ${NUM_COURSES}`);
+    console.log(`Courses: ${NUM_COURSES} (parallel: ${PARALLEL_COURSES})`);
     console.log(`Available course themes: ${ALL_COURSES.length}`);
     console.log();
 
@@ -669,10 +672,12 @@ async function run() {
     await authenticate(client, ADMIN_USER, ADMIN_PASSWORD);
     console.log('Authenticated as admin');
 
-    for (let i = 0; i < NUM_COURSES; i++) {
-        const courseData = ALL_COURSES[i % ALL_COURSES.length];
-        await buildOneCourse(client, courseData, i);
-    }
+    const courseLimit = pLimit(PARALLEL_COURSES);
+    await Promise.all(
+        Array.from({ length: NUM_COURSES }, (_, i) =>
+            courseLimit(() => buildOneCourse(client, ALL_COURSES[i % ALL_COURSES.length], i))
+        )
+    );
 
     console.log('\n=== All done! ===');
     console.log(`Created ${NUM_COURSES} courses with exercises, lectures, FAQs, exams, and channel messages.`);
