@@ -531,16 +531,19 @@ async function buildOneCourse(client, courseData, courseIndex) {
     console.log(`  Course created (id=${courseId})`);
 
     // 2. Exercises (70 total) with messages per exercise channel
-    console.log('  Creating exercises...');
+    const totalExercises = Object.values(EXERCISE_DISTRIBUTION).reduce((a, b) => a + b, 0);
+    console.log(`  Creating exercises (0/${totalExercises})...`);
     const createdExercises = [];
     let exerciseErrorCount = 0;
     let exerciseMsgTotal = 0;
+    let exerciseDoneCount = 0;
     const exerciseMessagePool = courseData.exerciseMessages || courseData.channelMessages || [];
     for (const [type, count] of Object.entries(EXERCISE_DISTRIBUTION)) {
         const pool = courseData.exercises[type === 'file-upload' ? 'fileUpload' : type] || [];
         const items = fill(pool, count);
         for (let i = 0; i < items.length; i++) {
             const releasePast = pastRatio ? i < items.length / 2 : i >= items.length / 2;
+            process.stdout.write(`    [${type} ${i + 1}/${count}] ${items[i].title}...`);
             try {
                 let ex;
                 if (type === 'programming') {
@@ -554,19 +557,25 @@ async function buildOneCourse(client, courseData, courseIndex) {
                 else if (type === 'file-upload') ex = await createFileUploadExercise(client, courseId, items[i], releasePast);
                 if (ex) {
                     createdExercises.push(ex);
+                    process.stdout.write(` created (id=${ex.id}), posting messages...`);
                     const posted = await postExerciseMessages(client, courseId, ex.id, exerciseMessagePool, TARGET_EXERCISE_MESSAGES);
                     exerciseMsgTotal += posted;
+                    exerciseDoneCount++;
+                    process.stdout.write(` ${posted} msgs. [${exerciseDoneCount}/${totalExercises}]\n`);
+                } else {
+                    process.stdout.write(` skipped\n`);
                 }
             } catch (e) {
                 exerciseErrorCount++;
+                const detail = typeof e.response?.data === 'string' ? e.response.data : JSON.stringify(e.response?.data);
+                process.stdout.write(` ERROR: ${e.message}\n`);
                 if (exerciseErrorCount <= 3) {
-                    const detail = typeof e.response?.data === 'string' ? e.response.data : JSON.stringify(e.response?.data);
-                    console.log(`    Error creating ${type} exercise: ${e.message} — ${detail}`);
+                    console.log(`      ${detail}`);
                 }
             }
         }
     }
-    console.log(`  Created ${createdExercises.length} exercises (${exerciseErrorCount} errors), ${exerciseMsgTotal} exercise messages`);
+    console.log(`  Created ${createdExercises.length}/${totalExercises} exercises (${exerciseErrorCount} errors), ${exerciseMsgTotal} exercise messages`);
 
     // 3. Lectures (20 with 5 units each)
     console.log('  Creating lectures...');
