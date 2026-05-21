@@ -320,6 +320,16 @@ def generate_markdown_report(
         "`config.ini` for more meaningful percentile resolution."
     )
     lines.append("")
+    lines.append(
+        "> **Measurement scope:** All latency values are **end-to-end wall-clock times** "
+        "measured from the benchmark client. Each request travels: benchmark client → "
+        "Artemis Spring endpoint (`GET /api/search`) → Weaviate → Spring response → client. "
+        "The numbers therefore include HTTP overhead, Spring controller processing, and "
+        "Weaviate query time. Weaviate is queried *directly* only for the entity-count "
+        "snapshot reported in the [Ingested Entities](#ingested-entities-in-weaviate) "
+        "section; those calls are not part of the latency benchmark."
+    )
+    lines.append("")
 
     # --- Environment ---
     lines.append("## Environment")
