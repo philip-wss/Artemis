@@ -153,6 +153,7 @@ async function createProgrammingExercise(client, courseId, data, releasePast) {
         assessmentType: 'AUTOMATIC',
         packageName: 'de.tum.cit.aet',
         allowOnlineEditor: true,
+        staticCodeAnalysisEnabled: false,
         releaseDate,
         dueDate,
         problemStatement: `# ${data.title}\n\n${data.problemStatement}`,
@@ -371,6 +372,7 @@ async function createExamExercise(client, courseId, groupId, title, type, course
             assessmentType: 'AUTOMATIC',
             packageName: 'de.tum.cit.aet',
             allowOnlineEditor: true,
+            staticCodeAnalysisEnabled: false,
             problemStatement: `Implement: ${title}`,
             buildConfig: {
                 buildScript: '#!/usr/bin/env bash\nset -e\nchmod +x ./gradlew && ./gradlew clean test',
