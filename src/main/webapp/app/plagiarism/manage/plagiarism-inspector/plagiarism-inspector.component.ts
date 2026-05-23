@@ -19,7 +19,7 @@ import { PlagiarismCasesService } from 'app/plagiarism/shared/services/plagiaris
 import { NgbDropdown, NgbDropdownButtonItem, NgbDropdownItem, NgbDropdownMenu, NgbDropdownToggle, NgbModal, NgbTooltip } from '@ng-bootstrap/ng-bootstrap';
 import { AlertService, AlertType } from 'app/foundation/service/alert.service';
 import { Subscription } from 'rxjs';
-import { PlagiarismResultDTO, PlagiarismResultStats } from 'app/plagiarism/shared/entities/PlagiarismResultDTO';
+import { PlagiarismResultDTO, PlagiarismResultStatsDTO } from 'app/plagiarism/shared/entities/PlagiarismResultDTO';
 import { FaIconComponent } from '@fortawesome/angular-fontawesome';
 import { TranslateDirective } from 'app/foundation/language/translate.directive';
 import { FeatureToggleDirective } from 'app/foundation/feature-toggle/feature-toggle.directive';
@@ -80,7 +80,7 @@ export class PlagiarismInspectorComponent implements OnInit, OnDestroy {
     /**
      * Statistics for the automated plagiarism detection result
      */
-    plagiarismResultStats?: PlagiarismResultStats;
+    plagiarismResultStats?: PlagiarismResultStatsDTO;
 
     /**
      * True, if an automated plagiarism detection is running; false otherwise.

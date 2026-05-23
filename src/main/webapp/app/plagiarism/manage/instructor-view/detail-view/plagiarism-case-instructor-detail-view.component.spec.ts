@@ -4,12 +4,12 @@ import { PlagiarismCaseInstructorDetailViewComponent } from 'app/plagiarism/mana
 import { PlagiarismCasesService } from 'app/plagiarism/shared/services/plagiarism-cases.service';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { TranslateService } from '@ngx-translate/core';
-import { PlagiarismCase } from 'app/plagiarism/shared/entities/PlagiarismCase';
+import { PlagiarismCase, PlagiarismCaseExercise, PlagiarismCaseVerdictResponse } from 'app/plagiarism/shared/entities/PlagiarismCase';
 import { HttpResponse, provideHttpClient } from '@angular/common/http';
 import { SessionStorageService } from 'app/foundation/service/session-storage.service';
 import { WebsocketService } from 'app/foundation/service/websocket.service';
 import { Observable, ReplaySubject, of } from 'rxjs';
-import { TextExercise } from 'app/text/shared/entities/text-exercise.model';
+import { ExerciseType } from 'app/exercise/shared/entities/exercise/exercise.model';
 import { PlagiarismVerdict } from 'app/plagiarism/shared/entities/PlagiarismVerdict';
 import { MetisService } from 'app/communication/service/metis.service';
 import { MockProfileService } from 'test/helpers/mocks/service/mock-profile.service';
@@ -34,8 +34,10 @@ describe('Plagiarism Cases Instructor View Component', () => {
     const exercise = {
         id: 1,
         title: 'Test Exercise',
-        course: { id: 1, title: 'Test Course' },
-    } as TextExercise;
+        type: ExerciseType.TEXT,
+        courseId: 1,
+        courseTitle: 'Test Course',
+    } as PlagiarismCaseExercise;
 
     const plagiarismCase = {
         id: 1,
@@ -91,7 +93,7 @@ describe('Plagiarism Cases Instructor View Component', () => {
     });
 
     it('should save plagiarism case plagiarism verdict', fakeAsync(() => {
-        saveVerdictSpy.mockReturnValue(of({ body: { verdict: PlagiarismVerdict.PLAGIARISM } }) as Observable<HttpResponse<PlagiarismCase>>);
+        saveVerdictSpy.mockReturnValue(of({ body: { verdict: PlagiarismVerdict.PLAGIARISM } }) as Observable<HttpResponse<PlagiarismCaseVerdictResponse>>);
         component.posts = [{ id: 1, plagiarismCase: { id: 1 } }];
         component.courseId = 1;
         component.plagiarismCaseId = 1;
@@ -102,7 +104,7 @@ describe('Plagiarism Cases Instructor View Component', () => {
     }));
 
     it('should save plagiarism case warning verdict', fakeAsync(() => {
-        saveVerdictSpy.mockReturnValue(of({ body: { verdict: PlagiarismVerdict.WARNING, verdictMessage: 'message' } }) as Observable<HttpResponse<PlagiarismCase>>);
+        saveVerdictSpy.mockReturnValue(of({ body: { verdict: PlagiarismVerdict.WARNING, verdictMessage: 'message' } }) as Observable<HttpResponse<PlagiarismCaseVerdictResponse>>);
         component.posts = [{ id: 1, plagiarismCase: { id: 1 } }];
         component.courseId = 1;
         component.plagiarismCaseId = 1;
@@ -114,7 +116,9 @@ describe('Plagiarism Cases Instructor View Component', () => {
     }));
 
     it('should save plagiarism case point deduction verdict', fakeAsync(() => {
-        saveVerdictSpy.mockReturnValue(of({ body: { verdict: PlagiarismVerdict.POINT_DEDUCTION, verdictPointDeduction: 80 } }) as Observable<HttpResponse<PlagiarismCase>>);
+        saveVerdictSpy.mockReturnValue(
+            of({ body: { verdict: PlagiarismVerdict.POINT_DEDUCTION, verdictPointDeduction: 80 } }) as Observable<HttpResponse<PlagiarismCaseVerdictResponse>>,
+        );
         component.posts = [{ id: 1, plagiarismCase: { id: 1 } }];
         component.courseId = 1;
         component.plagiarismCaseId = 1;
@@ -126,7 +130,7 @@ describe('Plagiarism Cases Instructor View Component', () => {
     }));
 
     it('should save plagiarism case no plagiarism verdict', fakeAsync(() => {
-        saveVerdictSpy.mockReturnValue(of({ body: { verdict: PlagiarismVerdict.NO_PLAGIARISM } }) as Observable<HttpResponse<PlagiarismCase>>);
+        saveVerdictSpy.mockReturnValue(of({ body: { verdict: PlagiarismVerdict.NO_PLAGIARISM } }) as Observable<HttpResponse<PlagiarismCaseVerdictResponse>>);
         component.posts = [{ id: 1, plagiarismCase: { id: 1 } }];
         component.courseId = 1;
         component.plagiarismCaseId = 1;
@@ -155,7 +159,7 @@ describe('Plagiarism Cases Instructor View Component', () => {
                 instructor: 'user',
                 exercise: plagiarismCase.exercise!.title,
                 inCourseOrExam: 'artemisApp.plagiarism.plagiarismCases.notification.inCourse',
-                courseOrExam: exercise.course!.title,
+                courseOrExam: exercise.courseTitle,
             }),
         );
     });
@@ -167,7 +171,7 @@ describe('Plagiarism Cases Instructor View Component', () => {
         const examTitle = 'Exam Title';
         const examPlagiarismCase = {
             ...plagiarismCase,
-            exercise: { ...exercise, course: undefined, exerciseGroup: { exam: { id: 3, title: examTitle } } },
+            exercise: { ...exercise, examId: 3, examTitle },
         };
         component.plagiarismCase = examPlagiarismCase;
         component.currentAccount = { id: 99, name: 'user' } as User;

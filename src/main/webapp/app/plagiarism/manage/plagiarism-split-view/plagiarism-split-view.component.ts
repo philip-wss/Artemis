@@ -1,5 +1,5 @@
 import { AfterViewInit, Component, Directive, ElementRef, OnChanges, OnDestroy, OnInit, SimpleChanges, inject, input, viewChildren } from '@angular/core';
-import { PlagiarismComparison } from 'app/plagiarism/shared/entities/PlagiarismComparison';
+import { PlagiarismComparison, PlagiarismComparisonSummary } from 'app/plagiarism/shared/entities/PlagiarismComparison';
 import { FromToElement } from 'app/plagiarism/shared/entities/PlagiarismSubmissionElement';
 import Split from 'split.js';
 import { Subject } from 'rxjs';
@@ -13,6 +13,7 @@ import { PlagiarismFileElement } from 'app/plagiarism/shared/entities/Plagiarism
 import { IconDefinition, faLock, faUnlock } from '@fortawesome/free-solid-svg-icons';
 import { TextSubmissionViewerComponent } from './text-submission-viewer/text-submission-viewer.component';
 import { FaIconComponent } from '@fortawesome/angular-fontawesome';
+import { PlagiarismCaseExercise } from 'app/plagiarism/shared/entities/PlagiarismCase';
 
 @Directive({ selector: '[jhiPane]' })
 export class SplitPaneDirective {
@@ -28,8 +29,8 @@ export class SplitPaneDirective {
 export class PlagiarismSplitViewComponent implements AfterViewInit, OnChanges, OnInit, OnDestroy {
     private plagiarismCasesService = inject(PlagiarismCasesService);
 
-    readonly comparison = input<PlagiarismComparison | undefined>(undefined!);
-    readonly exercise = input<Exercise>();
+    readonly comparison = input<PlagiarismComparison | PlagiarismComparisonSummary | undefined>(undefined!);
+    readonly exercise = input<Exercise | PlagiarismCaseExercise>();
     readonly splitControlSubject = input<Subject<string>>();
     readonly sortByStudentLogin = input<string>();
     readonly forStudent = input<boolean>();
@@ -79,7 +80,7 @@ export class PlagiarismSplitViewComponent implements AfterViewInit, OnChanges, O
 
         if (changes.comparison) {
             this.plagiarismCasesService
-                .getPlagiarismComparisonForSplitView(getCourseId(this.exercise())!, changes.comparison.currentValue.id)
+                .getPlagiarismComparisonForSplitView(this.getCourseIdForExercise()!, changes.comparison.currentValue.id)
                 .subscribe((resp: HttpResponse<PlagiarismComparison>) => {
                     this.plagiarismComparison = resp.body!;
                     const sortByStudentLogin = this.sortByStudentLogin();
@@ -91,6 +92,17 @@ export class PlagiarismSplitViewComponent implements AfterViewInit, OnChanges, O
                     }
                 });
         }
+    }
+
+    private getCourseIdForExercise(): number | undefined {
+        const exercise = this.exercise();
+        if (!exercise) {
+            return undefined;
+        }
+        if ('courseId' in exercise && exercise.courseId !== undefined) {
+            return exercise.courseId;
+        }
+        return getCourseId(exercise);
     }
 
     ngOnDestroy() {

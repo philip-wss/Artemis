@@ -2,12 +2,12 @@ import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { PlagiarismCaseReviewComponent } from 'app/plagiarism/shared/review/plagiarism-case-review.component';
 import { PlagiarismCaseVerdictComponent } from 'app/plagiarism/shared/verdict/plagiarism-case-verdict.component';
-import { PlagiarismCase } from 'app/plagiarism/shared/entities/PlagiarismCase';
+import { PlagiarismCase, PlagiarismCaseVerdictResponse } from 'app/plagiarism/shared/entities/PlagiarismCase';
 import { PlagiarismCasesService } from 'app/plagiarism/shared/services/plagiarism-cases.service';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { TranslateService } from '@ngx-translate/core';
 import { HttpResponse } from '@angular/common/http';
-import { getCourseFromExercise, getExerciseUrlSegment, getIcon } from 'app/exercise/shared/entities/exercise/exercise.model';
+import { getExerciseUrlSegment, getIcon } from 'app/exercise/shared/entities/exercise/exercise.model';
 import { PlagiarismVerdict } from 'app/plagiarism/shared/entities/PlagiarismVerdict';
 import { MetisService } from 'app/communication/service/metis.service';
 import { PageType } from 'app/communication/metis.util';
@@ -44,6 +44,7 @@ import { LinkifyService } from 'app/communication/link-preview/services/linkify.
 import { PlagiarismPostService } from 'app/plagiarism/shared/services/plagiarism-post.service';
 import { PlagiarismPostCreationDtoModel } from 'app/plagiarism/shared/entities/plagiarism-post-creation-dto.model';
 import { PostCreateEditModalComponent } from 'app/communication/posting-create-edit-modal/post-create-edit-modal/post-create-edit-modal.component';
+import { Course } from 'app/core/course/shared/entities/course.model';
 
 @Component({
     selector: 'jhi-plagiarism-case-instructor-detail-view',
@@ -114,7 +115,7 @@ export class PlagiarismCaseInstructorDetailViewComponent implements OnInit, OnDe
 
                 this.verdictMessage = this.plagiarismCase.verdictMessage ?? '';
                 this.verdictPointDeduction = this.plagiarismCase.verdictPointDeduction ?? 0;
-                this.metisService.setCourse(getCourseFromExercise(this.plagiarismCase.exercise!)!);
+                this.metisService.setCourse({ id: this.plagiarismCase.exercise?.courseId, title: this.plagiarismCase.exercise?.courseTitle } as Course);
                 this.metisService.setPageType(this.pageType);
                 this.metisService.getFilteredPosts({
                     plagiarismCaseId: this.plagiarismCase!.id,
@@ -155,7 +156,7 @@ export class PlagiarismCaseInstructorDetailViewComponent implements OnInit, OnDe
                 verdictPointDeduction: this.verdictPointDeduction,
             })
             .subscribe({
-                next: (res: HttpResponse<PlagiarismCase>) => {
+                next: (res: HttpResponse<PlagiarismCaseVerdictResponse>) => {
                     this.plagiarismCase.verdict = res.body!.verdict;
                     this.plagiarismCase.verdictPointDeduction = res.body!.verdictPointDeduction!;
                     this.plagiarismCase.verdictBy = res.body!.verdictBy;
@@ -178,7 +179,7 @@ export class PlagiarismCaseInstructorDetailViewComponent implements OnInit, OnDe
                 verdictMessage: this.verdictMessage,
             })
             .subscribe({
-                next: (res: HttpResponse<PlagiarismCase>) => {
+                next: (res: HttpResponse<PlagiarismCaseVerdictResponse>) => {
                     this.plagiarismCase.verdict = res.body!.verdict;
                     this.plagiarismCase.verdictMessage = res.body!.verdictMessage!;
                     this.plagiarismCase.verdictBy = res.body!.verdictBy;
@@ -195,7 +196,7 @@ export class PlagiarismCaseInstructorDetailViewComponent implements OnInit, OnDe
             throw new Error('Cannot call saveVerdict before student is notified');
         }
         this.plagiarismCasesService.saveVerdict(this.courseId, this.plagiarismCaseId, { verdict: PlagiarismVerdict.PLAGIARISM }).subscribe({
-            next: (res: HttpResponse<PlagiarismCase>) => {
+            next: (res: HttpResponse<PlagiarismCaseVerdictResponse>) => {
                 this.plagiarismCase.verdict = res.body!.verdict;
                 this.plagiarismCase.verdictBy = res.body!.verdictBy;
                 this.plagiarismCase.verdictDate = res.body!.verdictDate;
@@ -211,7 +212,7 @@ export class PlagiarismCaseInstructorDetailViewComponent implements OnInit, OnDe
             throw new Error('Cannot call saveNoPlagiarismVerdict before student is notified');
         }
         this.plagiarismCasesService.saveVerdict(this.courseId, this.plagiarismCaseId, { verdict: PlagiarismVerdict.NO_PLAGIARISM }).subscribe({
-            next: (res: HttpResponse<PlagiarismCase>) => {
+            next: (res: HttpResponse<PlagiarismCaseVerdictResponse>) => {
                 this.plagiarismCase.verdict = res.body!.verdict;
                 this.plagiarismCase.verdictBy = res.body!.verdictBy;
                 this.plagiarismCase.verdictDate = res.body!.verdictDate;
@@ -248,11 +249,8 @@ export class PlagiarismCaseInstructorDetailViewComponent implements OnInit, OnDe
         const studentName = abbreviateString(this.plagiarismCase.student?.name ?? '', 70);
         const instructorName = abbreviateString(this.currentAccount?.name ?? '', 70);
         const exerciseTitle = abbreviateString(this.plagiarismCase.exercise?.title ?? '', 70);
-        const belongsToExam = !!this.plagiarismCase.exercise?.exerciseGroup;
-        const courseOrExamTitle = abbreviateString(
-            (belongsToExam ? this.plagiarismCase.exercise?.exerciseGroup?.exam?.title : this.plagiarismCase.exercise?.course?.title) ?? '',
-            70,
-        );
+        const belongsToExam = !!this.plagiarismCase.exercise?.examId;
+        const courseOrExamTitle = abbreviateString((belongsToExam ? this.plagiarismCase.exercise?.examTitle : this.plagiarismCase.exercise?.courseTitle) ?? '', 70);
 
         this.createdPost = this.metisService.createEmptyPostForContext(undefined, this.plagiarismCase); // Note the limit of 1.000 characters for the post's content
         this.createdPost.title = this.translateService.instant('artemisApp.plagiarism.plagiarismCases.notification.title', {

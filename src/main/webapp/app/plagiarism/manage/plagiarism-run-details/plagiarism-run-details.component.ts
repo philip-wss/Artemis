@@ -3,7 +3,7 @@ import { GraphColors } from 'app/exercise/shared/entities/statistics.model';
 import { Range, round } from 'app/foundation/util/utils';
 import { PlagiarismComparison } from 'app/plagiarism/shared/entities/PlagiarismComparison';
 import { PlagiarismStatus } from 'app/plagiarism/shared/entities/PlagiarismStatus';
-import { PlagiarismResultStats } from 'app/plagiarism/shared/entities/PlagiarismResultDTO';
+import { PlagiarismResultStatsDTO } from 'app/plagiarism/shared/entities/PlagiarismResultDTO';
 import { TranslateDirective } from 'app/foundation/language/translate.directive';
 import { HelpIconComponent } from 'app/shared-ui/components/help-icon/help-icon.component';
 import { BarChartModule } from '@swimlane/ngx-charts';
@@ -36,7 +36,7 @@ export class PlagiarismRunDetailsComponent extends PlagiarismAndTutorEffortDirec
     /**
      * Statistics for the automated plagiarism detection result
      */
-    readonly plagiarismResultStats = input<PlagiarismResultStats>();
+    readonly plagiarismResultStats = input<PlagiarismResultStatsDTO>();
     readonly similaritySelected = output<Range>();
 
     yScaleMax = 5;
