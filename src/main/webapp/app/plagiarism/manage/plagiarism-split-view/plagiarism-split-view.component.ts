@@ -102,7 +102,7 @@ export class PlagiarismSplitViewComponent implements AfterViewInit, OnChanges, O
         if ('courseId' in exercise && exercise.courseId !== undefined) {
             return exercise.courseId;
         }
-        return getCourseId(exercise);
+        return getCourseId(exercise as Exercise);
     }
 
     ngOnDestroy() {
