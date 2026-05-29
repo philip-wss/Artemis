@@ -22,6 +22,7 @@ import { SubmissionResultStatusComponent } from 'app/course/overview/submission-
 import { DifficultyLevelComponent } from 'app/exercise/difficulty-level/difficulty-level.component';
 import { ExerciseCategoriesComponent } from 'app/exercise/exercise-categories/exercise-categories.component';
 import { Result } from 'app/exercise/shared/entities/result/result.model';
+import { LiveQuizParticipationStatus } from 'app/quiz/shared/entities/quiz-exercise.model';
 import { ResultHistoryDropdownComponent } from './result-history-dropdown/result-history-dropdown.component';
 import { NgbTooltip } from '@ng-bootstrap/ng-bootstrap';
 import { DEFAULT_ATHENA_FEEDBACK_REQUEST_LIMIT } from 'app/course/overview/exercise-details/request-feedback-button/request-feedback-button.component';
@@ -65,6 +66,7 @@ export class ExerciseHeadersInformationComponent implements OnInit, OnChanges {
     @Input() isPractice: boolean = false;
     @Input() athenaEnabled: boolean = false;
     @Input() feedbackRequestLimit: number = DEFAULT_ATHENA_FEEDBACK_REQUEST_LIMIT;
+    @Input() quizLiveStatus?: LiveQuizParticipationStatus;
 
     dueDate?: dayjs.Dayjs;
     programmingExercise?: ProgrammingExercise;
