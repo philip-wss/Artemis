@@ -489,8 +489,12 @@ async function postExerciseMessages(client, courseId, exerciseId, messagePool, c
     const channel = await getExerciseChannel(client, courseId, exerciseId);
     if (!channel) return 0;
     const msgs = fill(messagePool, count);
-    const results = await Promise.allSettled(msgs.map(msg => postMessage(client, courseId, channel.id, msg)));
-    return results.filter(r => r.status === 'fulfilled' && r.value).length;
+    let posted = 0;
+    for (const msg of msgs) {
+        const result = await postMessage(client, courseId, channel.id, msg);
+        if (result) posted++;
+    }
+    return posted;
 }
 
 // -- Channel & Messages -------------------------------------------------------
@@ -647,14 +651,17 @@ async function buildOneCourse(client, courseData, courseIndex) {
         }
     }
 
-    // 6. Channel with messages — all messages posted in parallel
+    // 6. Channel with messages — posted sequentially to avoid overwhelming the async task executor
     console.log(`  [${courseId}] Creating channel and messages...`);
     const channelName = courseData.shortNamePrefix.toLowerCase() + '-discussion';
     const channel = await createChannel(client, courseId, channelName);
     if (channel) {
         const msgs = fill(courseData.channelMessages, TARGET_CHANNEL_MESSAGES);
-        const msgResults = await Promise.allSettled(msgs.map(msg => postMessage(client, courseId, channel.id, msg)));
-        const msgCount = msgResults.filter(r => r.status === 'fulfilled' && r.value).length;
+        let msgCount = 0;
+        for (const msg of msgs) {
+            const result = await postMessage(client, courseId, channel.id, msg);
+            if (result) msgCount++;
+        }
         console.log(`  [${courseId}] Posted ${msgCount} messages in #${channelName}`);
     }
 
