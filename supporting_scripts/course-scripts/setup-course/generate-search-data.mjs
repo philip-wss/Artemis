@@ -79,6 +79,13 @@ function pLimit(concurrency) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function ts() {
+    return new Date().toISOString().slice(11, 19);
+}
+
+const _origLog = console.log;
+console.log = (...args) => _origLog(`[${ts()}]`, ...args);
+
 let shortNameCounter = 0;
 // 4-char base-36 suffix derived from the current epoch second — changes each run so
 // re-running the script does not collide with short names created in a previous run.
