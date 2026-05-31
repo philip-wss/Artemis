@@ -672,6 +672,14 @@ async function run() {
     await authenticate(client, ADMIN_USER, ADMIN_PASSWORD);
     console.log('Authenticated as admin');
 
+    // Ensure ProgrammingExercises feature toggle is enabled
+    try {
+        await client.put('/api/admin/feature-toggle', { ProgrammingExercises: true });
+        console.log('Enabled ProgrammingExercises feature toggle');
+    } catch (e) {
+        console.log(`Warning: Could not enable ProgrammingExercises feature toggle (${e.message})`);
+    }
+
     const courseLimit = pLimit(PARALLEL_COURSES);
     await Promise.all(
         Array.from({ length: NUM_COURSES }, (_, i) =>
