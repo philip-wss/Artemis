@@ -124,13 +124,7 @@ jobs:
         fi
 
         echo "Executing all tests"
-        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification 2>&1 | tee tests.log
-    - name: Java Tests (All)
-      # Non-draft pull-request or default branch
-      if: ${{ env.RUN_ALL_TESTS }}
-      run: |
-        set -o pipefail
-        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification 2>&1 | tee tests.log
+        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification --continue 2>&1 | tee tests.log
     - name: Upload JUnit Test Results
       if: success() || failure()
       uses: actions/upload-artifact@v7
