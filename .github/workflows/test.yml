@@ -68,7 +68,7 @@ jobs:
   # Server tests run against PostgreSQL via Testcontainers (Docker required on the runner).
   # This matches the production database engine and catches SQL dialect issues that
   # in-memory databases like H2 would miss.
-server-tests:
+  server-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 80
 
@@ -250,8 +250,6 @@ server-tests:
         name: Java Architecture Tests
         path: build/test-results/test/*.xml
         reporter: java-junit
-
-    
 
   client-tests:
     runs-on: ubuntu-latest
