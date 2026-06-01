@@ -69,7 +69,7 @@ jobs:
   # This matches the production database engine and catches SQL dialect issues that
   # in-memory databases like H2 would miss.
   server-tests:
-    runs-on: aet-large-ubuntu
+    runs-on: ubuntu-latest
     timeout-minutes: 80
 
     steps:
@@ -103,21 +103,29 @@ jobs:
           TEST_MODULE_TAGS=$(echo "-DincludeModules=${CHANGED_MODULES[*]}")
 
           echo "Executing tests for modules: $CHANGED_MODULES"
-          ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification "$TEST_MODULE_TAGS" 2>&1 | tee tests.log
+          # HIER: --continue hinzugefügt
+          ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification "$TEST_MODULE_TAGS" --continue 2>&1 | tee tests.log
           exit 0
         fi
 
         echo "Executing all tests"
-        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification 2>&1 | tee tests.log
+        # HIER: --continue hinzugefügt
+        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification --continue 2>&1 | tee tests.log
     - name: Java Tests (All)
       # Non-draft pull-request or default branch
       if: ${{ env.RUN_ALL_TESTS }}
       run: |
         set -o pipefail
-        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification 2>&1 | tee tests.log
+        # HIER: --continue hinzugefügt
+        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification --continue 2>&1 | tee tests.log
+          exit 0
+        fi
+
+        echo "Executing all tests"
+        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification --continue 2>&1 | tee tests.log
     - name: Upload JUnit Test Results
       if: success() || failure()
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: JUnit Test Results
         path: build/test-results/test/*.xml
@@ -187,7 +195,7 @@ jobs:
         path: build/test-results/test/*.xml
         numFailures: 99
     - name: Test Report
-      uses: dorny/test-reporter@v2
+      uses: dorny/test-reporter@v3
       if: success() || failure()    # run this step even if previous step failed
       with:
         name: Server Tests (PostgreSQL)
@@ -198,10 +206,17 @@ jobs:
       run: bash supporting_scripts/extract_number_of_server_starts.sh
     - name: Upload Server Test Coverage Report
       if: success() || failure()
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: Coverage Report Server Tests
         path: build/reports/jacoco/aggregated/html
+    - name: Upload JaCoCo XML Reports
+      if: success() || failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: Server JaCoCo XML
+        path: build/reports/jacoco/**/jacocoTestReport.xml
+        if-no-files-found: ignore
     - name: Append Per-Module Coverage to Job Summary
       if: success() || failure()
       run: |
@@ -229,15 +244,18 @@ jobs:
       run: ./gradlew test -DincludeTags='ArchitectureTest' -x webapp
       if: success() || failure()
     - name: Test Report
-      uses: dorny/test-reporter@v2
+      uses: dorny/test-reporter@v3
       if: success() || failure()    # run this step even if previous step failed
       with:
         name: Java Architecture Tests
         path: build/test-results/test/*.xml
         reporter: java-junit
 
+    
+
   client-tests:
-    runs-on: aet-large-ubuntu
+    runs-on: ubuntu-latest
+
     timeout-minutes: 30
     steps:
         - uses: actions/checkout@v6
