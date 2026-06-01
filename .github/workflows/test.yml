@@ -273,7 +273,7 @@ jobs:
         - name: Compile TypeScript Test Files With Typechecking
           run: npm run compile:tests
         - name: TypeScript Test Without Typechecking
-          run: pnpm run test:ci -- --maxWorkers=2 --forceExit
+          run: npm run test:ci -- --maxWorkers=2 --forceExit
         - name: Upload Client Test Coverage Report
           if: success() || failure()
           uses: actions/upload-artifact@v6
