@@ -175,6 +175,13 @@ jobs:
         echo ""
         echo "=== Unique PostgreSQL errors ==="
         grep "PSQLException\|SQLSTATE(08006)" tests.log | sort -u | head -10 || echo "No PostgreSQL errors"
+    - name: "Codacy: Report coverage"
+      uses: codacy/codacy-coverage-reporter-action@master
+      with:
+        project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        coverage-reports: build/reports/jacoco/aggregated/jacocoTestReport.xml
+      # Geändert zu false, da das Abo abgelaufen ist. Verhindert jeglichen Datenversand.
+      if: false
     - name: Annotate Server Test Results
       uses: ashley-taylor/junit-report-annotations-action@f9c1a5cbe28479439f82b80a5402a6d3aa1990ac
       if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
@@ -259,8 +266,6 @@ jobs:
           uses: actions/setup-node@v6
           with:
               node-version: '${{ env.node }}'
-              cache: 'pnpm'
-              cache-dependency-path: '**/pnpm-lock.yaml'
         - name: Install Dependencies
           run: pnpm install --frozen-lockfile
         - name: Compile TypeScript Test Files With Typechecking
@@ -315,8 +320,6 @@ jobs:
       uses: actions/setup-node@v6
       with:
         node-version: '${{ env.node }}'
-        cache: 'pnpm'
-        cache-dependency-path: '**/pnpm-lock.yaml'
     - name: Install Dependencies
       run: pnpm install --frozen-lockfile
     - name: TypeScript Formatting
@@ -347,8 +350,6 @@ jobs:
       uses: actions/setup-node@v6
       with:
         node-version: '${{ env.node }}'
-        cache: 'pnpm'
-        cache-dependency-path: '**/pnpm-lock.yaml'
     - name: Install Dependencies
       run: pnpm install --frozen-lockfile
     - name: Compile TypeScript Files With Typechecking
