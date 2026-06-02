@@ -273,7 +273,7 @@ jobs:
         - name: Compile TypeScript Test Files With Typechecking
           run: npm run compile:tests
         - name: TypeScript Test Without Typechecking
-          run: npm run test:ci -- --pool=forks --poolOptions.forks.maxForks=2
+          run: NODE_OPTIONS="--max-old-space-size=5120" npm run test:ci -- --no-file-parallelism
         - name: Upload Client Test Coverage Report
           if: success() || failure()
           uses: actions/upload-artifact@v6
