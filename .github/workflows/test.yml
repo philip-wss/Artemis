@@ -25,9 +25,7 @@ on:
     - develop
     - main
     - release/*
-    tags:
-    - '[0-9]+.[0-9]+'
-    - '[0-9]+.[0-9]+.[0-9]+'
+    tags: '[0-9]+.[0-9]+.[0-9]+'
     paths-ignore:
     - 'README.md'
     - 'CODE_OF_CONDUCT.md'
@@ -52,9 +50,9 @@ on:
 
 # Limit the number of concurrent runs to one per PR
 # If a run is already in progress, cancel it
-# If the run is not for a PR, each run gets a unique group so pushes run in parallel
+# If the run is not for a PR, then this limit does not apply
 concurrency:
-  group: test-${{ github.event.pull_request.number || github.run_id }}
+  group: test-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 # Keep in sync with codeql-analysis.yml and build.yml
@@ -71,7 +69,7 @@ jobs:
   # This matches the production database engine and catches SQL dialect issues that
   # in-memory databases like H2 would miss.
   server-tests:
-    runs-on: ubuntu-latest
+    runs-on: aet-large-ubuntu
     timeout-minutes: 80
 
     steps:
@@ -90,44 +88,30 @@ jobs:
       if: ${{ !env.RUN_ALL_TESTS }}
       run: |
         set -o pipefail
-
         DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
-
         # Explicitly fetch as the clone action only clones the current branch
         git fetch origin "$DEFAULT_BRANCH"
-
         chmod +x ./supporting_scripts/get_changed_modules.sh
         CHANGED_MODULES=$(./supporting_scripts/get_changed_modules.sh "origin/$DEFAULT_BRANCH")
-
         # Restrict executed tests to changed modules if there is diff between this and the base branch
         if [ -n "${CHANGED_MODULES}" ]; then
           IFS=,
           TEST_MODULE_TAGS=$(echo "-DincludeModules=${CHANGED_MODULES[*]}")
-
           echo "Executing tests for modules: $CHANGED_MODULES"
-          # HIER: --continue hinzugefügt
-          ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification "$TEST_MODULE_TAGS" --continue 2>&1 | tee tests.log
+          ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification "$TEST_MODULE_TAGS" 2>&1 | tee tests.log
           exit 0
         fi
-
         echo "Executing all tests"
-        # HIER: --continue hinzugefügt
-        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification --continue 2>&1 | tee tests.log
+        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification 2>&1 | tee tests.log
     - name: Java Tests (All)
       # Non-draft pull-request or default branch
       if: ${{ env.RUN_ALL_TESTS }}
       run: |
         set -o pipefail
-        # HIER: --continue hinzugefügt
-        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification --continue 2>&1 | tee tests.log
-          exit 0
-        fi
-
-        echo "Executing all tests"
-        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification --continue 2>&1 | tee tests.log
+        ./gradlew --console=plain test jacocoTestReport -x webapp -x jacocoTestCoverageVerification 2>&1 | tee tests.log
     - name: Upload JUnit Test Results
       if: success() || failure()
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v6
       with:
         name: JUnit Test Results
         path: build/test-results/test/*.xml
@@ -197,7 +181,7 @@ jobs:
         path: build/test-results/test/*.xml
         numFailures: 99
     - name: Test Report
-      uses: dorny/test-reporter@v3
+      uses: dorny/test-reporter@v2
       if: success() || failure()    # run this step even if previous step failed
       with:
         name: Server Tests (PostgreSQL)
@@ -208,24 +192,16 @@ jobs:
       run: bash supporting_scripts/extract_number_of_server_starts.sh
     - name: Upload Server Test Coverage Report
       if: success() || failure()
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v6
       with:
         name: Coverage Report Server Tests
         path: build/reports/jacoco/aggregated/html
-    - name: Upload JaCoCo XML Reports
-      if: success() || failure()
-      uses: actions/upload-artifact@v7
-      with:
-        name: Server JaCoCo XML
-        path: build/reports/jacoco/**/jacocoTestReport.xml
-        if-no-files-found: ignore
     - name: Append Per-Module Coverage to Job Summary
       if: success() || failure()
       run: |
         AGGREGATED_REPORT_FILE=./module_coverage_report.md
         python3 ./supporting_scripts/code-coverage/per_module_cov_report/parse_module_coverage.py build/reports/jacoco $AGGREGATED_REPORT_FILE
         cat $AGGREGATED_REPORT_FILE > $GITHUB_STEP_SUMMARY
-
   server-style:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -246,7 +222,7 @@ jobs:
       run: ./gradlew test -DincludeTags='ArchitectureTest' -x webapp
       if: success() || failure()
     - name: Test Report
-      uses: dorny/test-reporter@v3
+      uses: dorny/test-reporter@v2
       if: success() || failure()    # run this step even if previous step failed
       with:
         name: Java Architecture Tests
@@ -254,93 +230,85 @@ jobs:
         reporter: java-junit
 
   client-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: aet-large-ubuntu
+    timeout-minutes: 30
     steps:
         - uses: actions/checkout@v6
         # It seems like there is some memory issue with these tests with the project-wide default node option
-        # `--max-old-space-size` set in the .npmrc, therefore we strip that single line as a workaround.
-        # The rest of .npmrc (currently just Node settings) stays. pnpm install/resolution settings now
-        # live in pnpm-workspace.yaml, which we deliberately do not touch here.
+        # `--max-old-space-size` set in the .npmrc, therefore we delete it for this test as a workaround
         - name: remove project-wide node options set in .npmrc just for this test
-          run: sed -i '/^node-options=/d' .npmrc || true
-        - name: Setup pnpm
-          uses: pnpm/action-setup@v4
-          with:
-              run_install: false
+          run: rm .npmrc || true
         - name: Setup Node.js
           uses: actions/setup-node@v6
           with:
               node-version: '${{ env.node }}'
-              cache: 'pnpm'
+              cache: 'npm'
         - name: Install Dependencies
-          run: pnpm install --frozen-lockfile
+          run: npm install
         - name: Compile TypeScript Test Files With Typechecking
-          run: pnpm run compile:tests
+          run: npm run compile:tests
         - name: TypeScript Test Without Typechecking
-          run: pnpm run test:ci
+          run: npm run test:ci
         - name: Upload Client Test Coverage Report
           if: success() || failure()
-          uses: actions/upload-artifact@v7
+          uses: actions/upload-artifact@v6
           with:
               name: Coverage Report Client Tests
               path: build/test-results/lcov-report/
         - name: Upload Vitest Coverage Report
           if: success() || failure()
-          uses: actions/upload-artifact@v7
+          uses: actions/upload-artifact@v6
           with:
               name: Vitest Coverage Report
               path: build/test-results/vitest/coverage/
-        - name: Upload Client Coverage Summaries
-          if: success() || failure()
-          uses: actions/upload-artifact@v7
-          with:
-              name: Client Coverage Summaries
-              path: |
-                  build/test-results/jest/coverage-summary.json
-                  build/test-results/vitest/coverage/coverage-summary.json
-              if-no-files-found: ignore
         - name: Upload JUnit Test Results
           if: success() || failure()
-          uses: actions/upload-artifact@v7
+          uses: actions/upload-artifact@v6
           with:
             name: Client JUnit Test Results
             path: junit.xml
         - name: Upload Vitest JUnit Test Results
           if: success() || failure()
-          uses: actions/upload-artifact@v7
+          uses: actions/upload-artifact@v6
           with:
             name: Vitest JUnit Test Results
             path: build/test-results/vitest/junit.xml
+
+  client-tests-selected:
+      runs-on: ubuntu-latest
+      timeout-minutes: 30
+      steps:
+          - uses: actions/checkout@v6
+            with:
+                fetch-depth: 0
+          - name: Setup Node.js
+            uses: actions/setup-node@v6
+            with:
+                node-version: '${{ env.node }}'
+                cache: 'npm'
+          - name: Install Dependencies
+            run: npm install
+          - name: Compile TypeScript Test Files With Typechecking
+            run: npm run compile:tests
+          - name: TypeScript Test (Selection) Without Typechecking
+            run: npm run test-diff:ci
 
   client-style:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v6
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        run_install: false
     - name: Setup Node.js
       uses: actions/setup-node@v6
       with:
         node-version: '${{ env.node }}'
-        cache: 'pnpm'
+        cache: 'npm'
     - name: Install Dependencies
-      run: pnpm install --frozen-lockfile
+      run: npm install
     - name: TypeScript Formatting
-      run: pnpm run prettier:check
+      run: npm run prettier:check
     - name: TypeScript Code Style
-      run: pnpm run lint
-      if: success() || failure()
-    - name: Install Playwright Dependencies
-      run: pnpm install --frozen-lockfile
-      working-directory: src/test/playwright
-      if: success() || failure()
-    - name: Playwright Code Style
-      run: pnpm run lint
-      working-directory: src/test/playwright
+      run: npm run lint
       if: success() || failure()
 
   client-compilation:
@@ -348,17 +316,12 @@ jobs:
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@v6
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        run_install: false
     - name: Setup Node.js
       uses: actions/setup-node@v6
       with:
         node-version: '${{ env.node }}'
-        cache: 'pnpm'
+        cache: 'npm'
     - name: Install Dependencies
-      run: pnpm install --frozen-lockfile
+      run: npm install
     - name: Compile TypeScript Files With Typechecking
-      run: pnpm run compile
-
+      run: npm run compile
