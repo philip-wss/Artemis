@@ -69,7 +69,7 @@ jobs:
   # This matches the production database engine and catches SQL dialect issues that
   # in-memory databases like H2 would miss.
   server-tests:
-    runs-on: aet-large-ubuntu
+    runs-on: ubuntu-latest
     timeout-minutes: 80
 
     steps:
@@ -230,7 +230,7 @@ jobs:
         reporter: java-junit
 
   client-tests:
-    runs-on: aet-large-ubuntu
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
         - uses: actions/checkout@v6
