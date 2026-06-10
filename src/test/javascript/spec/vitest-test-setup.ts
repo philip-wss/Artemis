@@ -36,6 +36,10 @@ dayjs.extend(customParseFormat);
 dayjs.extend(isoWeek);
 dayjs.extend(duration);
 
+if (typeof window === 'undefined') {
+	(globalThis as any).window = globalThis;
+}
+
 // Browser API mocks (not available in jsdom)
 globalThis.ResizeObserver = class ResizeObserver {
     observe(): void {}
