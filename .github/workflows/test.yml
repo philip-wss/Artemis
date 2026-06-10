@@ -69,7 +69,7 @@ jobs:
   # This matches the production database engine and catches SQL dialect issues that
   # in-memory databases like H2 would miss.
   server-tests:
-    runs-on: aet-large-ubuntu
+    runs-on: ubuntu-latest
     timeout-minutes: 80
 
     steps:
@@ -237,7 +237,7 @@ jobs:
         reporter: java-junit
 
   client-tests:
-    runs-on: aet-large-ubuntu
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
         - uses: actions/checkout@v6
@@ -255,7 +255,22 @@ jobs:
         - name: Compile TypeScript Test Files With Typechecking
           run: npm run compile:tests
         - name: TypeScript Test Without Typechecking
-          run: npm run test:ci
+          run: |
+            echo "=== 1. Starte Ressourcen-Monitor im Hintergrund ==="
+            while true; do
+              echo -e "\n[MONITOR - $(date +'%H:%M:%S')]"
+              free -m | awk 'NR==2{printf "  RAM:  %sMB / %sMB (%.2f%% genutzt)\n", $3,$2,$3*100/$2 }'
+              df -h / | awk 'NR==2{printf "  Disk: %s genutzt von %s (%s frei)\n", $3,$2,$4}'
+              top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print "  CPU:  " 100 - $1 "%"}'
+              sleep 15
+            done &
+            MONITOR_PID=$!
+
+            echo "=== 2. Starte eigentliche TypeScript Tests ==="
+            npm run test:ci -- --maxWorkers=2 --forceExit
+
+            echo "=== 3. Tests beendet. Stoppe Monitor ==="
+            kill $MONITOR_PID
         - name: Upload Client Test Coverage Report
           if: success() || failure()
           uses: actions/upload-artifact@v6
